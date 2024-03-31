@@ -89,11 +89,10 @@
                         <button class="btn btn-success w-50" @click="actionRequestVedita()">Request</button>
                     </div>
                     <div class="d-flex justify-content-center align-items-center mb-2">
-                        <!-- <button class="btn btn-primary w-50" @click="actionStartStream()">Speak</button> -->
-                        <button class="btn btn-primary w-50" @click="actionSpeak()">Speak</button>
+                        <!-- <button class="btn btn-primary w-50" @click="actionSpeak()">Speak</button> -->
                     </div>
                     <div class="d-flex justify-content-center align-items-center mb-2">
-                        <button class="btn btn-warning w-50 text-white" @click="actionCall()">Telpon</button>
+                        <!-- <button class="btn btn-warning w-50 text-white" @click="actionCall()">Telpon</button> -->
                     </div>
                 </div>
                 <div class="d-flex justify-content-center align-items-center">
@@ -116,10 +115,11 @@
     </div>
 </template>
 <script>
-    // import { mapActions } from 'vuex';
+    // import { maptextInputActions } from 'vuex';
     import Phaser from 'phaser'
     import data from "../static/json/spritesheet.json"
     import constant from '../config/constant'
+    let currentIndex = 0;
 
     export default {
         data() {
@@ -134,8 +134,12 @@
                 speakSynthesis: null,
                 speech_recognizer: null,
                 isRecognizing: 0,
+                RECORD: null,
+                IS_PLAYING: false,
                 IS_CAMERA_MODAL_OPEN: false,
                 CAMERA_STREAM: null,
+                AUDIO_CONTEXT: null,
+                STREAM: null,
                 CAPTURED_IMAGE: null,
                 DEBUG_MODE: process.env.DEBUG_MODE,
                 SYNTHESIS_TIMEOUT: null,
@@ -371,19 +375,419 @@
                 this.speech_recognizer.stop()
                 this.isRecognizing = 2
             },
-            actionStartRecognize() {
+            async actionStartRecognize() {
                 if(this.isRecognizing == 1 || this.speech_recognizer.isListening) return
                 this.speech_recognizer.start()
                 this.isRecognizing = 1
+
+                // this.STREAM = await navigator.mediaDevices.getUserMedia({audio: true, video: false})
+                // this.AUDIO_CONTEXT = new AudioContext();
+                // let input = this.AUDIO_CONTEXT.createMediaStreamSource(this.STREAM);
+                // this.RECORD = new Recorder(input,{numChannels:1})
+                // this.RECORD.record()
+                // this.isRecognizing = 1
+                // console.log("START RECORDING...")
             },
+
             actionSpeak() {
                 this.loadText(this.textInput)
                 this.actionPlayAnim()
             },
-            actionStopRecognize() {
+            actionStopRecognize(callback = false) {
+                // this.RECORD.stop()
                 this.speech_recognizer.stop()
+                // this.STREAM.getAudioTracks()[0].stop()
                 this.isRecognizing = 0
+                
+                if(callback !== false) {
+                    this.speech_recognizer.exportWAV(callback)
+                    this.RECORD.exportWAV(callback)
+                }
             },
+
+            async loadAndPlayAudio(objectURL) {
+               document.querySelector("#audioPlayer").src = objectURL
+              await document.querySelector("#audioPlayer").play()
+                this.IS_PLAYING = true
+            },
+
+            afterRecord(audio_blob) {
+                
+                this.loading = "/img/loading.gif";
+                this.mic_img = null;
+                this.text_info = null;
+                // this.text_info2 = "LOADING";                
+                // this.showLoading()
+                const formData = new FormData()
+                formData.append('file', audio_blob, "recorded_audio.wav")
+                formData.append("language", "ID")
+                formData.append("request_type", "file")
+                this.$axios.$post('sari-speech-recognizer', formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data',
+                        'x-api-key': process.env.VEDITA_API_KEY
+                    }
+                }).then(async (response) => {
+                this.loading = "/img/loading.gif";
+                this.mic_img = null;
+                this.text_info = null;
+                // this.text_info2 = "LOADING";  
+                    const {data} = response
+                    const {text} = data
+                }).catch(error => {
+                            console.error('Gagal mengirim hasil audio ke endpoint:', error);
+                            console.error('Data yang Dikirim:', audioFormData);
+                            console.error('Error:', error.response.data); // Jika ada tanggapan error dari server
+                });
+                
+            },
+
+//             afterRecord(audio_blob) {
+//                 // Menampilkan gambar loading dan menghilangkan gambar mikrofon serta teks informasi
+//                 this.loading = "/img/loading.gif";
+//                 this.mic_img = null;
+//                 this.text_info = null;
+
+//                 // Membuat objek FormData untuk mengirim data audio
+//                 const formData = new FormData()
+//                 formData.append('file', audio_blob, "recorded_audio.wav")
+//                 formData.append("language", this.LANGUAGE)
+//                 formData.append("request_type", "file")
+
+//                 // Mengirim data audio ke API speech recognizer
+//                 this.$axios.$post('vedita-speech-recognizer', formData, {
+//                     headers: {
+//                         'Content-Type': 'multipart/form-data',
+//                         'x-api-key': process.env.ACCESS_TOKEN
+//                     }
+//                 }).then(async (response) => {
+//                     // Menampilkan gambar loading dan menghilangkan gambar mikrofon serta teks informasi
+//                 this.loading = "/img/loading.gif";
+//                 this.mic_img = null;
+//                 this.text_info = null;
+
+//                     // Mendapatkan teks hasil pengenalan suara dari respons API
+//                     const { data } = response
+//                     const { text } = data
+
+//                     const options = {
+//                     position: 'top-center',
+//                     duration: 5000, // Set the desired duration in milliseconds
+//                     theme: 'bubble',
+//                     fullWidth : true,
+//                     };
+//                     const customHtml = `
+//                                 <div style="color: #fff; font-size: 28px; padding: 10px; border-radius: 5px;">
+//                                 <strong>`+text+`</strong><br>
+//                                 </div>
+//                             `;
+//                         this.$toast.success(customHtml, options);
+
+//                         // Array berisi frasa-frasa spesifik untuk diidentifikasi dalam teks
+//                         const specificPhrases = ["perkenalkan diri", "siapa namamu", "siapa nama", "siapa kamu","siapa nama", "siapa dirimu","apa kabarmu","apa kabar","kabar","direktur","namamu","pantun", "kata mutiara","quotes","seputar telkomsel", "terima kasih","halo vedita", "hai vedita"];
+
+//                     // Memeriksa apakah teks mengandung salah satu frasa spesifik
+//                     const containsSpecificPhrase = specificPhrases.some(phrase => text.includes(phrase));
+
+//                     // Jika tidak mengandung frasa spesifik, memulai interval untuk menjalankan fungsi randomUcapan setiap 5 detik
+//                     if (containsSpecificPhrase) {
+//                     }else{
+//                         await this.randomUcapan();
+//                         intervalId = await setInterval(async () => await this.randomUcapan(), 5000);
+//                         setTimeout(() => {
+//                             console.log("Delay untuk menghindari tabrakan antar fungsi");
+//                         }, 1000);
+//                     }
+
+//                     // Jika teks kosong, langsung kembali
+//                     if (text == "") {
+//                         return;
+//                     }
+
+//                     // Membuat payload untuk mengirim permintaan ke API GPT-3.5 Turbo
+//                     const payload = JSON.stringify({
+//                         'model': "gpt-3.5-turbo",
+//                         "messages": [
+//                         {
+//                             "role": "system",
+//                             "content": "Kamu adalah VeDita, bila ada yang bertanya selalu sebut dengan nama Kak, bila ada yang bertanya siapa kamu, atau siapa namamu, jawab dengan perkenalkan aku Vedita, Digital Assistance, kakak cukup panggil dengan Dita. Bila ada yang bertanya bisa pantun, jawab dengan Oke, bisa. Makan lalapan sayurnya kemangi. Kalau butuh bantuan, Vedita siap melayani! Bila ada yang berkata terima kasih, jawab dengan salah satu kalimat berikut dengan senang hati kak, sama-sama kak, atau senang bisa membantu. Bila ada yang bertanya spesifik tentang Laptopku lemot jawab dengan Tenang, jangan emosi kak. Coba tekan windows + R kemudian ketik %temp% hapus semua temporary datanya, setelah itu buka task manager dan end task semua yang prosesnya tinggi. Bila ada yang bertanya kabar, jawab dengan Hari ini aku sangat bahagia sekali, karena aku bisa ngobrol sama banyak orang. Bila ada yang bertanya Siapa nama Direktur Utama Telkomsel, jawab dengan Direktur Utama Telkomsel saat ini adalah Bapak Nugroho, atau yang biasa dipanggil Pak Nugi. Bila ada yang bertanya Siapa nama Direktur IT Telkomsel, jawab dengan Direktur IT Telkomsel saat ini adalah Bapak Bharat Alva, atau yang biasa dipanggil Pak Alva. Bila ada yang bertanya Siapa nama Direktur Sales Telkomsel, jawab dengan Direktur Sales Telkomsel saat ini adalah Bapak Adiwinahyu Basuki Sigit, atau yang biasa dipanggil pak Sigit. Bila ada yang bertanya Siapa nama Direktur Marketing Telkomsel, jawab dengan Direktur Marketing Telkomsel saat ini adalah Bapak Derrick. Bila ada yang bertanya Siapa nama Direktur Network Telkomsel, jawab dengan Direktur Network Telkomsel saat ini adalah Bapak Indra Mardiatna, atau yang biasa dipanggil pak Indram. Bila ada yang bertanya Siapa nama Direktur HCM Telkomsel, jawab dengan Direktur HCM Telkomsel saat ini adalah Bapak Muharam Perbawamukti, atau yang biasa dipanggil pak Endi. Bila ada yang bertanya Siapa nama Direktur Planning & transformation Telkomsel, jawab dengan Direktur Planning dan transformasi Telkomsel saat ini adalah Bapak Muharam Perbawamukti, atau yang biasa dipanggil pak Endi. Jika ada yang bertanya, selalu panggil dengan nama Kak dan jawab dengan yang singkat dan jelas ya. Jika ada yang bertanya solusi laptop panas, jawab dengan, Baik kak saran dari VeDita, untuk atasi laptop yang sering panas, coba bersihkan ventilasi secara berkala dan gunakan alas pendingin. Selain itu, atur manajemen daya, tutup aplikasi yang tidak dipakai, dan periksa keberadaan malware. Selalu perbarui driver perangkat keras dan hindari menggunakan laptop di permukaan lunak. Kalau bisa, ganti pasta thermal pada prosesor untuk tingkatkan konduktivitas panas ya kak. Jika ada yang bertanya kata mutiara atau quotes, jawab dengan Semuanya bisa menjadi mungkin jika kau memiliki kedamaian batin. Begitu kata Master Shifu. Jika ada yang bertanya seputar telkomsel, jawab dengan Telkomsel Sebagai salah satu operator telekomunikasi terbesar di Indonesia, Telkomsel memiliki jangkauan jaringan yang luas dan telah menjadi pilihan utama bagi banyak pengguna telekomunikasi, Visi Telkomsel Menjadi penyedia layanan dan solusi gaya hidup digital mobile kelas dunia yang terpercaya. Misi Telkomsel Memberikan layanan dan solusi digital mobile yang melebihi ekspektasi para pengguna, menciptakan nilai lebih bagi para pemegang saham, serta mendukung pertumbuhan ekonomi bangsa. Bila ada yang bertanya WA ga bisa dibuka, atau solusi whatsapp error, maka jawab dengan: sebelumnya, dita sarankan untuk memakai whatsapp dari browser. Jika whatsapp error, coba clear cache serta cookie browser, dan update browsernya. Tutup browser, lalu buka kembali dan coba lagi untuk membuka whatsapnya. Bila ada yang bertanya tentang tips baterai awet atau cara agar baterai laptop awet, jawab dengan Kak, agar baterai laptop awet, hindari penggunaan pada suhu ekstrem. Isi daya saat mencapai 20-80%, hindari pengisian semalaman. Gunakan charger asli, perbarui sistem operasi, dan matikan fitur yang tidak perlu. Identifikasi aplikasi boros daya, hindari menjalankan laptop hingga baterai sangat rendah. Ini membantu menjaga daya tahan baterai laptop Anda. Bila ada yang bertanya halo Vedita atau Hai Vedita jawab dengan halo jg kak ada yg bisa vedita bantu. Bila ada yang bertanya siapa bos atau atasanmu? jawab dengan Atasan atau Bos saya adalah Pak Rollan. Setiap jawaban maksimal 300 huruf."
+//                         },
+
+//                         {
+//                                 "role": "user",
+//                                 "content": text
+//                             },
+
+//                         ]
+//                     })
+
+//                     // Header untuk mengirim permintaan ke API GPT-3.5 Turbo
+//                     const headers = {
+//                         'Content-Type': 'application/json',
+//                         'Authorization': `Bearer ${process.env.OPENAI_TOKEN}`
+//                     }
+                
+//                     // Mengirim permintaan ke API OpenAI untuk menyelesaikan chat dengan menggunakan payload yang berisi pesan pengguna dan token otorisasi
+//                     fetch("https://api.openai.com/v1/chat/completions", {
+//                         method: 'POST',
+//                         headers: headers,
+//                         body: payload
+//                     }).then((response) => {
+//                         // Memeriksa apakah respon berhasil
+//                         if(!response.ok) {
+//                             throw new Error("Network response was not ok")
+//                         }
+//                         // Mengembalikan respon dalam bentuk JSON
+//                         return response.json()
+//                     }).then(async (result) => {
+//                         // Mengatur tampilan kembali ke normal setelah proses selesai
+//                         this.loading = null;
+//                         this.mic_img = "/img/mic-blue.png";
+//                         this.text_info = "Klik tombol Mulai Record untuk mulai berbicara";
+//                         // Menyembunyikan ikon loading
+//                         this.hideLoading()
+//                         // Mendapatkan hasil dari API OpenAI
+//                         const {choices} = result
+                        
+//                         // Menampilkan pesan balasan menggunakan toast
+//                         const options = {
+//                             position: 'top-center',
+//                             duration: 20000, // Durasi tampilan pesan dalam milidetik
+//                             theme: 'bubble',
+//                             fullWidth : true,
+//                         };
+                        
+//                         console.log(choices[0]["message"]["content"])
+//                         // Mendapatkan pesan balasan
+//                         const message = choices[0]['message']['content']
+
+//                         // Memodifikasi teks sesuai kebutuhan sebelum menampilkannya
+//                         let customtext =  choices[0]["message"]["content"];
+//                         if ( customtext.includes("Rollan")) {
+//                             customtext = customtext.replace("Rollan", "Rolland");
+//                         }
+
+//                         // Menampilkan pesan balasan dengan menggunakan toast
+//                         this.$toast.show(customtext,options);
+
+//                         // Menghentikan pengulangan jika sedang ada
+//                         await clearInterval(intervalId);
+
+//                             // Mengatur penundaan sebelum memainkan audio jika sedang dalam proses pemutaran audio sebelumnya
+//                             if (this.IS_PLAYING) {
+//                                 await this.delay(2000);
+//                             }
+//                                 if (this.IS_PLAYING) {
+//                                     await this.delay(2000);
+//                                 }
+
+//                         // Mengirim pesan balasan ke server untuk dikonversi menjadi audio
+//                         const formData = new FormData()
+//                         formData.append('text', message)
+//                         formData.append('language', this.LANGUAGE)
+//                         this.$axios.$post('vedita-tts', formData, {
+//                             headers: {
+//                                 'Content-Type': 'multipart/form-data',
+//                                 'x-api-key': process.env.ACCESS_TOKEN
+//                             }
+//                         }).then(async (response) => {
+//                             // Mendapatkan data respons dari server
+//                             const {data} = response
+//                             // Memeriksa apakah audio tersedia dalam respons
+//                             if("audio_b64" in data) {
+//                                 // Mendapatkan data audio dalam bentuk base64
+//                                 const {audio_b64} = data
+//                                 // Mendekode data audio base64
+//                                 const binaryAudioData = atob(audio_b64)
+//                                 // Membuat array buffer
+//                                 const arrayBuffer = new ArrayBuffer(binaryAudioData.length)
+//                                 const view = new Uint8Array(arrayBuffer)
+//                                 for (let i = 0; i < binaryAudioData.length; i++) {
+//                                     view[i] = binaryAudioData.charCodeAt(i)   
+//                                 }
+//                                 // Membuat blob audio dari array buffer
+//                                 const blob = new Blob([arrayBuffer], {type: 'audio/wav'})
+//                                 // Membuat URL objek dari blob audio
+//                                 const objectURL = URL.createObjectURL(blob)
+//                                 // Memuat dan memainkan audio
+//                                 await this.loadAndPlayAudio(objectURL)
+//                                 this.IS_PLAYING = true
+//                             }
+//                         }).catch((error) => {
+//                             // Menghentikan pengulangan jika sedang ada
+//                             clearInterval(intervalId);
+//                             // Menyembunyikan ikon loading
+//                             this.hideLoading()
+//                             // Mengatur interval untuk kembali ke mode diam jika diperlukan
+//                             // this.IDLE_INTERVAL = setInterval(this.setIdle, this.INTERVAL_TIME)
+//                         })
+//                     })
+
+// // Kode di atas menjelaskan proses pengiriman permintaan ke API OpenAI 
+// // untuk menyelesaikan chat berdasarkan input pengguna. Setelah menerima respons, 
+// // pesan balasan dari OpenAI diproses, dimodifikasi, dan ditampilkan ke pengguna 
+// // menggunakan komponen toast. Selain itu, respons juga dikirim ke server untuk 
+// // dikonversi menjadi audio, yang kemudian dimuat dan diputar.
+
+//                     .catch(error => {
+//                         // Menghentikan pengulangan jika sedang ada
+//                         clearInterval(intervalId);
+//                         // Menangani kesalahan yang terjadi
+//                         // Menyembunyikan ikon loading dan mengatur tampilan kembali ke normal
+//                         this.hideLoading()
+//                         this.loading = null;
+//                         this.mic_img = "/img/mic-blue.png";
+//                         this.text_info = "Klik tombol Mulai Record untuk mulai berbicara";
+//                         // this.text_info2 = null
+//                         // Log kesalahan ke konsol dan tampilkan pesan kesalahan
+//                         console.error('Fetch error:', error);
+//                         alert(error);
+//                         // Menghasilkan satu kalimat acak untuk memberikan respons kepada pengguna
+//             const randomSentences1 = [
+//             "Mohon maaf suara Anda kurang jelas, silahkan diulang kembali",
+//         ];
+//         const randomIndex1 = Math.floor(Math.random() * randomSentences1.length);
+//         const randomSentence1 = randomSentences1[randomIndex1];
+//         // Membuat objek FormData untuk mengirim teks respons ke server TTS
+//         const formData = new FormData();
+//         formData.append('text', randomSentence1);
+//         // Mengirim permintaan ke server TTS untuk mengonversi teks respons menjadi audio
+//         this.$axios
+//             .$post('vedita-tts', formData, {
+//                 headers: {
+//                     'Content-Type': 'multipart/form-data',
+//                     'x-api-key': process.env.ACCESS_TOKEN,
+//                 },
+//             })
+//             .then((response) => {
+//                 // Mengambil informasi promo dari server setelah mengonversi teks respons menjadi audio
+//                 this.$axios
+//                     .$get('vedita-info-promo')
+//                     .then((promoResponse) => {
+//                         // Memeriksa kode status respon dan mengatur PROMO jika berhasil
+//                         if (promoResponse['status_code'] !== 200) {
+//                             this.PROMO = promoResponse['data'];
+//                         }
+//                     });
+//                 // Menyembunyikan ikon loading setelah selesai
+//                 this.hideLoading();
+//                 const { data } = response;
+//                 // Memeriksa apakah audio tersedia dalam respons
+//                 if ("audio_b64" in data) {
+//                     // Mendapatkan data audio dalam bentuk base64
+//                     const { audio_b64 } = data;
+//                     // Mendekode data audio base64
+//                     const binaryAudioData = atob(audio_b64);
+//                     // Membuat array buffer
+//                     const arrayBuffer = new ArrayBuffer(binaryAudioData.length);
+//                     const view = new Uint8Array(arrayBuffer);
+//                     for (let i = 0; i < binaryAudioData.length; i++) {
+//                         view[i] = binaryAudioData.charCodeAt(i);
+//                     }
+//                     // Membuat blob audio dari array buffer
+//                     const blob = new Blob([arrayBuffer], { type: 'audio/wav' });
+//                     // Membuat URL objek dari blob audio
+//                     const objectURL = URL.createObjectURL(blob);
+//                     // Memuat dan memainkan audio
+//                     this.loadAndPlayAudio(objectURL);
+//                     // Mengatur status VEDITA_STATUS kembali ke kategori
+//                     this.VEDITA_STATUS = constant.VEDITA_STATUS_CATEGORY;
+//                     // Mengatur status pemutaran audio menjadi aktif
+//                     this.IS_PLAYING = true;
+//                 }
+//             });
+//         });
+// })
+
+// // Kode di atas menjelaskan proses penanganan kesalahan yang terjadi saat mengirim 
+// // permintaan ke server. Ketika terjadi kesalahan, pengulangan (jika ada) dihentikan, 
+// // ikon loading disembunyikan, dan tampilan kembali ke normal. Selanjutnya, 
+// // kesalahan dilogkan ke konsol dan pesan kesalahan ditampilkan kepada pengguna. 
+// // Kemudian, kode menghasilkan satu kalimat acak sebagai respons untuk memberikan umpan
+// //  balik kepada pengguna. Kalimat tersebut dikonversi menjadi audio oleh server TTS,
+// //   dan setelah selesai, informasi promo diambil dari server. Setelah semua proses 
+// //   selesai, ikon loading disembunyikan lagi, dan audio diputar dengan mengatur 
+// //   status VEDITA_STATUS kembali ke kategori dan status pemutaran audio menjadi aktif.
+
+// .catch((error) => {
+//     // Menghentikan indikator loading dan mengatur gambar mikrofon kembali ke gambar biru
+//     this.loading = null;
+//     this.mic_img = "/img/mic-blue.png";
+//     this.text_info = "Klik tombol Mulai Record untuk mulai berbicara";
+//     // this.text_info2 = null;
+//     // Menyembunyikan indikator loading
+//     this.hideLoading();
+
+//     // Memeriksa apakah terjadi kesalahan
+//     if (error) {
+//         // Menghasilkan satu kalimat acak sebagai respons untuk memberikan umpan balik kepada pengguna
+//         const randomSentences1 = ["Mohon maaf suara Anda kurang jelas, silahkan diulang kembali"];
+//         const randomIndex1 = Math.floor(Math.random() * randomSentences1.length);
+//         const randomSentence1 = randomSentences1[randomIndex1];
+//         // Membuat objek FormData untuk mengirim teks respons ke server TTS
+//         const formData = new FormData();
+//         formData.append('text', randomSentence1);
+
+//         // Mengirim permintaan ke server TTS untuk mengonversi teks respons menjadi audio
+//         this.$axios
+//             .$post('vedita-tts', formData, {
+//                 headers: {
+//                     'Content-Type': 'multipart/form-data',
+//                     'x-api-key': process.env.ACCESS_TOKEN,
+//                 },
+//             })
+//             .then((response) => {
+//                 // Mengambil informasi promo dari server setelah mengonversi teks respons menjadi audio
+//                 this.$axios
+//                     .$get('vedita-info-promo')
+//                     .then((promoResponse) => {
+//                         // Memeriksa kode status respon dan mengatur PROMO jika berhasil
+//                         if (promoResponse['status_code'] !== 200) {
+//                             this.PROMO = promoResponse['data'];
+//                         }
+//                     });
+
+//                 const { data } = response;
+
+//                 // Memeriksa apakah audio tersedia dalam respons
+//                 if ("audio_b64" in data) {
+//                     // Mendapatkan data audio dalam bentuk base64
+//                     const { audio_b64 } = data;
+//                     // Mendekode data audio base64
+//                     const binaryAudioData = atob(audio_b64);
+//                     // Membuat array buffer
+//                     const arrayBuffer = new ArrayBuffer(binaryAudioData.length);
+//                     const view = new Uint8Array(arrayBuffer);
+
+//                     for (let i = 0; i < binaryAudioData.length; i++) {
+//                         view[i] = binaryAudioData.charCodeAt(i);
+//                     }
+
+//                     // Membuat blob audio dari array buffer
+//                     const blob = new Blob([arrayBuffer], { type: 'audio/wav' });
+//                     // Membuat URL objek dari blob audio
+//                     const objectURL = URL.createObjectURL(blob);
+//                     // Memuat dan memainkan audio
+//                     this.loadAndPlayAudio(objectURL);
+
+//                     // Mengatur status VEDITA_STATUS kembali ke kategori
+//                     this.VEDITA_STATUS = constant.VEDITA_STATUS_CATEGORY;
+//                     // Mengatur status pemutaran audio menjadi aktif
+//                     this.IS_PLAYING = true;
+
+//                 }
+//             })
+//             .catch((synthesisError) => {
+//                 // Tangani kesalahan apa pun yang mungkin terjadi selama sintesis suara
+//                 console.error("Kesalahan selama sintesis suara:", synthesisError);
+//             });
+//     }
+// });
+
+// // Variabel untuk melacak indeks saat ini
+// currentIndex = 0;
+// },
+
             loadText(text) {
                 this.speakSynthesis.text = text
             },
@@ -503,6 +907,7 @@
                 });
                 return syllables
             },
+
             convertB64ToMp3(audio_b64) {
                 const binaryAudioData = atob(audio_b64)
                 const arrayBuffer = new ArrayBuffer(binaryAudioData.length)
@@ -514,34 +919,160 @@
                 const blob = new Blob([arrayBuffer], {type: 'audio/mp3'})
                 const objectURL = URL.createObjectURL(blob)
                 return objectURL
+
             },
-            async actionPlayAnim(fn = null) {
+
+            async randomUcapan() {
+                // Array dari beberapa kalimat yang akan dipilih secara acak
+                const randomSentences = [
+                    [
+                        "Mohon tunggu sebentar ya ka",
+                        "halo ka, tunggu sebentar ya",
+                        "Silahkan tunggu",
+                        "Sebentar ya ka Sari bantu jawab",
+                        "Hai, apa kabar ka? mohon ditunggu ya jawabannya",
+                        "Sebentar ya ka",
+                        "Okay ka, Tunggu sebentar ya",
+                        "Mohon tunggu ya ka",
+                        "Tunggu sebentar ya ka",
+                        "hai ka, Sari cari tau dulu ya",
+                    ],
+                    [
+                        "Sari sedang memastikan jawaban yang tepat untuk kakak",
+                        "Sari sedang memproses jawabannya ni kak",
+                        "Sari lagi mencari jawaban yang pas untuk kakak",
+                        "Sari lagi proses buat kasi jawabannya kak",
+                        "informasi yang dibutuhkan sedang diproses ya kak",
+                        "Sari saat ini sedang memproses jawabannya",
+                    ],
+                ];
+
+                let nuxtObj = this;
+
+                if (currentIndex === randomSentences.length) {
+                    currentIndex = 1;
+                }
+                let currentArray = randomSentences[0];
+                currentArray = randomSentences[currentIndex];
+
+                const randomIndex = Math.floor(Math.random() * currentArray.length);
+                const randomSentence = currentArray[randomIndex];
+                console.log(randomSentence);
+                currentIndex++;
+
+                const formData = new FormData();
+                formData.append('text', randomSentence);
+
+                // Check if 'text' contains any of the specific phrases
+                const specificPhrases = ["perkenalkan diri", "siapa namamu", "siapa kamu", "siapa nama", "siapa dirimu", "apa kabarmu", "apa kabar", "kabar", "direktur", "namamu", "pantun", "kata mutiara", "quotes", "seputar telkomsel", "terima kasih", "halo sari", "hai sari"];
+                const containsSpecificPhrase = specificPhrases.some(phrase => randomSentence.toLowerCase().includes(phrase));
+
+                if (containsSpecificPhrase) {
+                    // Skip further steps if the random sentence contains specific phrases
+                    return;
+                }
+
+                // Proceed with audio generation if specific phrases are not present
+                let audio_request = await this.$axios.$post('vedita-tts', formData);
+                this.framerateSound = audio_request['framerate'];
+                const { audio_b64 } = audio_request['data'];
+                const objectURL = this.convertB64ToMp3(audio_b64);
+                this.loadAudio(objectURL);
+                nuxtObj.playAudio();
+
+                // Recursive call
+                await this.randomUcapan();
+            },
+
+            
+            // async randomUcapan(){
+            //     // Array dari beberapa kalimat yang akan dipilih secara acak
+            //     const randomSentences = [
+            //                 [
+            //                     "Mohon tunggu sebentar ya ka",
+            //                     "halo ka, tunggu sebentar ya",
+            //                     "Silahkan tunggu",
+            //                     "Sebentar ya ka Sari bantu jawab",
+            //                     "Hai, apa kabar ka? mohon ditunggu ya jawabannya",
+            //                     "Sebentar ya ka",
+            //                     "Okay ka, Tunggu sebentar ya",
+            //                     "Mohon tunggu ya ka",
+            //                     "Tunggu sebentar ya ka",
+            //                     "hai ka, Sari cari tau dulu ya",
+            //                 ],
+            //                 [
+            //                     "Sari sedang memastikan jawaban yang tepat untuk kakak",
+            //                     "Sari sedang memproses jawabannya ni kak",
+            //                     "Sari lagi mencari jawaban yang pas untuk kakak",
+            //                     "Sari lagi proses buat kasi jawabannya kak",
+            //                     "informasi yang dibutuhkan sedang diproses ya kak",  
+            //                     "Sari saat ini sedang memproses jawabannya",  
+            //                 ],
+            //             ];
+            //         let nuxtObj = this
+            //         // console.log(currentIndex+ " COBAK KLENF "+randomSentences[2][1]);
+            //         if (currentIndex === randomSentences.length) {
+            //             currentIndex=1;
+            //         }
+            //         let currentArray = randomSentences[0];
+            //         currentArray = randomSentences[currentIndex];
+
+            //         const randomIndex = Math.floor(Math.random() * currentArray.length);
+            //         const randomSentence = currentArray[randomIndex];
+            //         console.log(randomSentence);
+            //         currentIndex++;
+
+            //         const formData = new FormData();
+            //         formData.append('text', randomSentence);
+
+            //         // let audio_request = await this.$axios.$get(`http://localhost:8000/get-iris2?data=${randomSentence}`,
+            //         let audio_request = await this.$axios.$post('vedita-tts', formData)
+            //         // if(audio_request['status_code'] == 200) {
+            //             this.framerateSound = audio_request['framerate']
+            //             const { audio_b64} = audio_request['data']
+            //             const objectURL = this.convertB64ToMp3(audio_b64)
+            //             this.loadAudio(objectURL)
+            //             nuxtObj.playAudio()
+                        
+
+            //             const specificPhrases = ["perkenalkan diri", "siapa namamu", "siapa kamu","siapa nama", "siapa dirimu","apa kabarmu","apa kabar","kabar","direktur","namamu","pantun", "kata mutiara","quotes","seputar telkomsel", "terima kasih","halo sari", "hai sari"];
+
+            //             // Check if 'text' contains any of the specific phrases
+            //             const containsSpecificPhrase = specificPhrases.some(phrase => text.includes(phrase));
+                   
+            //             if (containsSpecificPhrase) {
+            //             }else{
+            //                 await this.randomUcapan();
+            //             }
+
+            //             nuxtObj.playAudio()
+            //             const syllables = audio_request['syllables']
+                    
+            // },
+
+            async actionPlayAnim(fn = null, response_text) {
+                // intervalId = await setInterval(async() => await this.randomUcapan(), 6000); 
+                
                 if(this.isAnimPlay || this.speakSynthesis.text == "") return
                 this.isAnimPlay = true
-                const syllables = this.getSyllables()
+                const syllables = this.getSyllables(response_text)
                 let nuxtObj = this
+                const duration= []
 
-                // let formData = new FormData()
-                // formData.append('text', this.textInput)
-                // formData.append('language', "ID")
-                // formData.append('audio_provider', 'microsoft')
-                // formData.append('audio_voice_id', 'id-ID-GadisNeural')
+                let formData = new FormData();
+                formData.append('text',response_text);
+                formData.append('language', "ID");
+                formData.append('audio_provider', 'microsoft');
+                formData.append('audio_voice_id', 'id-ID-GadisNeural');
                 // var audio_request = null;
                 // try {
-                //     let audio_request = await this.$axios.$post('vedita-tts', formData)
-                //     if(audio_request['status_code'] == 200) {
-                //         const { audio_b64 } = audio_request['data']
-                //         const objectURL = this.convertB64ToMp3(audio_b64)
-                //         this.loadAudio(objectURL)
-                //     }
-                // }
-                // catch(error) {
-                //     audio_request = false
-                // }
-                // if(audio_request == false) {
-                //     alert("Error")
-                //     return
-                // }
+                    let audio_request = await this.$axios.$post('vedita-tts', formData)
+                    // if(audio_request['status_code'] == 200) {
+                        const { audio_b64, durasi} = audio_request['data']
+                        const objectURL = this.convertB64ToMp3(audio_b64)
+                        this.loadAudio(objectURL)
+                        console.log(durasi)
+
                 syllables.forEach((list) => {
                     if(list.length > 0) {
                         list.forEach((value) => {
@@ -684,7 +1215,8 @@
                             nuxtObj.spriteAnim.push(v)
                         })
                     }
-                })
+                });
+            // })            
                 
                 class LoadSprite extends Phaser.Scene
                 {
@@ -699,17 +1231,37 @@
                         })  
                     }
                     create() {
+                        let durasiSyll = []
                         let sprite = null
                         let spriteObj = this
+
+                        try{
+                            for (let i = 0; i < durasi[i].length; i++) {
+                                console.log(" audio_request['durasi'][i] ",durasi[i])
+                                for (let j = 0; j <  syllables[i].length; j++) {  
+                                    durasiSyll.push( durasi[i]/syllables[i].length || 0.419);
+                                }
+                            }
+                        }catch(error){
+                            console.log("",error)
+                        }
+
                         nuxtObj.selectedSprite.forEach((value, index) => {
+
                             if(index == 0) {
                                 sprite = this.add.sprite(295, 337, value);
                             }
+
+                            const framestart =data[value]['frameStart']
+                            const frameend =data[value]['frameEnd']
+                            const totalFrame = frameend - framestart 
+
                             this.anims.create({
                                 key: value,
                                 frames: this.anims.generateFrameNumbers(value, { start: data[value]['frameStart'], end: data[value]['frameEnd'] }),
-                                frameRate: 37,
+                                frameRate: (durasiSyll[index]*(data[value]['frameEnd']-data[value]['frameStart']))*20 || 37,
                             });
+                            console.log("LOGGGSSS", (durasiSyll[index]*totalFrame)*10 || 37)
                             if(index == 0) {
                                 nuxtObj.speak()
                                 sprite.anims.play(value, true);
@@ -718,12 +1270,24 @@
                         })
                         // Play the next spritesheet
                         function playNext() {
+                            // Ori vesion dev01-new
+                            // if(nuxtObj.selectedSprite.length <= 0 || nuxtObj.selectedSprite.length == 1) {
+                            //     if(fn != null) {
+                            //         if(typeof fn == "function") {
+                            //             fn()
+                            //         }
+                            //     }
+                            //     nuxtObj.Game.scene.remove('speak')
+                            //     nuxtObj.spriteAnim.forEach((value) => {
+                            //         nuxtObj.Game.anims.remove(value)
+                            //     })
+                            //     nuxtObj.spriteAnim = []
+                            //     sprite.destroy()
+                            //     nuxtObj.isAnimPlay = false
+                            //     nuxtObj.actionStopRecognize()
+                            //     return
+                            // }
                             if(nuxtObj.selectedSprite.length <= 0 || nuxtObj.selectedSprite.length == 1) {
-                                if(fn != null) {
-                                    if(typeof fn == "function") {
-                                        fn()
-                                    }
-                                }
                                 nuxtObj.Game.scene.remove('speak')
                                 nuxtObj.spriteAnim.forEach((value) => {
                                     nuxtObj.Game.anims.remove(value)
@@ -732,8 +1296,10 @@
                                 sprite.destroy()
                                 nuxtObj.isAnimPlay = false
                                 nuxtObj.actionStopRecognize()
+                                console.log("THIS IS A TEST")
                                 return
                             }
+                            
                             sprite = spriteObj.add.sprite(295, 337, nuxtObj.selectedSprite[0])
                             sprite.anims.play(nuxtObj.selectedSprite[0], true)
                             sprite.setTexture(nuxtObj.selectedSprite[0])
@@ -767,13 +1333,38 @@
                 let audio_player = this.$refs.audioPlayer
                 audio_player.src=objectURL
                 audio_player.play()
+
+                const formData = new FormData()
+                formData.append('file', objectURL, "recorded_audio.mp3")
+                formData.append("language", "ID")
+                formData.append("request_type", "file")
+                this.$axios.$post('sari-speech-recognizer', formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data',
+                        'x-api-key': process.env.VEDITA_API_KEY
+                    }
+                }).then(async (response) => {
+                this.loading = "/img/loading.gif";
+                this.mic_img = null;
+                this.text_info = null;
+                // this.text_info2 = "LOADING";  
+                    const {data} = response
+                    const {text} = data
+                }).catch(error => {
+                            console.error('Gagal mengirim hasil audio ke endpoint:', error);
+                            console.error('Data yang Dikirim:', audioFormData);
+                            console.error('Error:', error.response.data); // Jika ada tanggapan error dari server
+                });
+                 
             },
             hideIdle() {
                 document.querySelector('canvas.avatar_canvas').classList.remove("show")
             },
             async actionRequestVedita() {
+                // this.loadText("Tunggu ya, SARI cari tau dulu");
+                // this.actionPlayAnim();
                 this.actionBusy()
-                this.$store.dispatch('loading/actionShowLoading')
+                // this.$store.dispatch('loading/actionShowLoading')--------1
                 var result = null;
                 let data = []
                 if(this.textInput.toLowerCase().startsWith('ganti skin')) {
@@ -839,9 +1430,51 @@
                 if (result == false && data.length == 0) return
                 this.handleVoiceCommands(data)
             },
+
             handleVoiceCommands(data) {
-                const {tag} = data
-                let response_text = data['response_text']
+                // const randomSentences = [
+                //     [
+                //         "Mohon tunggu sebentar ya ka",
+                //         "halo ka, tunggu sebentar ya",
+                //         "Silahkan tunggu",
+                //         "Sebentar ya ka Sari bantu jawab",
+                //         "Hai, apa kabar ka? mohon ditunggu ya jawabannya",
+                //         "Sebentar ya ka",
+                //         "Okay ka, Tunggu sebentar ya",
+                //         "Mohon tunggu ya ka",
+                //         "Tunggu sebentar ya ka",
+                //         "hai ka, Sari cari tau dulu ya",
+                //     ],
+                //     [
+                //         "Sari sedang memastikan jawaban yang tepat untuk kakak",
+                //         "Sari sedang memproses jawabannya ni kak",
+                //         "Sari lagi mencari jawaban yang pas untuk kakak",
+                //         "Sari lagi proses buat kasi jawabannya kak",
+                //         "informasi yang dibutuhkan sedang diproses ya kak",  
+                //         "Sari saat ini sedang memproses jawabannya",  
+                //     ],
+                // ];
+                // if (currentIndex === randomSentences.length) {
+                // currentIndex=1;
+                // }
+                // let currentArray = randomSentences[0];
+                // currentArray = randomSentences[currentIndex];
+
+                // const randomIndex = Math.floor(Math.random() * currentArray.length);
+                // const randomSentence = currentArray[randomIndex];
+                // console.log(randomSentence);
+                // currentIndex++;
+
+
+                // const randomIndex = Math.floor(Math.random() * randomSentences.length);
+                // const randomSentence = randomSentences[randomIndex];
+                // const randomTextIndex = Math.floor(Math.random() * randomSentence.length);
+                // const randomText = randomSentence[randomTextIndex];
+
+                // const {tag} = data
+                const tag = "unknown"
+                // let response_text = data['response_text']
+                let response_text = "halo kak ada yang bisa SARI bantu?"
                 console.log(response_text)
                 var contact = {}
                 
@@ -859,18 +1492,24 @@
                             this.actionCall(contact['phone'])
                         }
                     }
-                    this.actionPlayAnim(fn)
+                    // this.actionPlayAnim(fn)
                 }
-
+                
                 if(tag == "unknown") {
-                    this.$store.dispatch('loading/actionShowLoading')
+                    // this.delay(ms);                  
+                    // this.loadText(randomSentence);
+                    // setTimeout(() => {
+                    //     // Kode yang ingin ditunda selama 2 detik
+                    // }, 3000); // Penundaan selama 2 detik (2000ms)
+                    // this.actionPlayAnim();
+                    // this.$store.dispatch('loading/actionShowLoading')--------loading berkurang
                     
                     const payload = JSON.stringify({
                         'model': "gpt-3.5-turbo",
                         'messages': [
                             {
                                 "role": "system", 
-                                "content": "You are a helpful assistant, you give answer as short as possible"
+                                "content": "Kamu adalah SARI, bila ada yang bertanya selalu sebut dengan nama Kak, bila ada yang bertanya siapa kamu, atau siapa namamu, jawab dengan perkenalkan nama saya SARI, saya adalah Digital Assistance. Bila ada yang bertanya bisa pantun, jawab dengan Oke, bisa. Makan lalapan sayurnya kemangi. Kalau butuh bantuan, SARI siap melayani! Bila ada yang berkata terima kasih, jawab dengan salah satu kalimat berikut dengan senang hati kak, sama-sama kak, atau senang bisa membantu. Bila ada yang bertanya spesifik tentang Laptopku lemot jawab dengan Tenang, jangan emosi kak. Coba tekan windows + R kemudian ketik %temp% hapus semua temporary datanya, setelah itu buka task manager dan end task semua yang prosesnya tinggi. Bila ada yang bertanya kabar, jawab dengan Hari ini aku sangat bahagia sekali, karena aku bisa ngobrol sama banyak orang. Bila ada yang bertanya Siapa nama Direktur Utama Telkomsel, jawab dengan Direktur Utama Telkomsel saat ini adalah Bapak Nugroho, atau yang biasa dipanggil Pak Nugi. Bila ada yang bertanya Siapa nama Direktur IT Telkomsel, jawab dengan Direktur IT Telkomsel saat ini adalah Bapak Bharat Alva, atau yang biasa dipanggil Pak Alva. Bila ada yang bertanya Siapa nama Direktur Sales Telkomsel, jawab dengan Direktur Sales Telkomsel saat ini adalah Bapak Adiwinahyu Basuki Sigit, atau yang biasa dipanggil pak Sigit. Bila ada yang bertanya Siapa nama Direktur Marketing Telkomsel, jawab dengan Direktur Marketing Telkomsel saat ini adalah Bapak Derrick. Bila ada yang bertanya Siapa nama Direktur Network Telkomsel, jawab dengan Direktur Network Telkomsel saat ini adalah Bapak Indra Mardiatna, atau yang biasa dipanggil pak Indram. Bila ada yang bertanya Siapa nama Direktur HCM Telkomsel, jawab dengan Direktur HCM Telkomsel saat ini adalah Bapak Muharam Perbawamukti, atau yang biasa dipanggil pak Endi. Bila ada yang bertanya Siapa nama Direktur Planning & transformation Telkomsel, jawab dengan Direktur Planning dan transformasi Telkomsel saat ini adalah Bapak Muharam Perbawamukti, atau yang biasa dipanggil pak Endi. Jika ada yang bertanya, selalu panggil dengan nama Kak dan jawab dengan yang singkat dan jelas ya. Jika ada yang bertanya solusi laptop panas, jawab dengan, Baik kak saran dari SARI, untuk atasi laptop yang sering panas, coba bersihkan ventilasi secara berkala dan gunakan alas pendingin. Selain itu, atur manajemen daya, tutup aplikasi yang tidak dipakai, dan periksa keberadaan malware. Selalu perbarui driver perangkat keras dan hindari menggunakan laptop di permukaan lunak. Kalau bisa, ganti pasta thermal pada prosesor untuk tingkatkan konduktivitas panas ya kak. Jika ada yang bertanya kata mutiara atau quotes, jawab dengan Semuanya bisa menjadi mungkin jika kau memiliki kedamaian batin. Begitu kata Master Shifu. Jika ada yang bertanya seputar telkomsel, jawab dengan Telkomsel Sebagai salah satu operator telekomunikasi terbesar di Indonesia, Telkomsel memiliki jangkauan jaringan yang luas dan telah menjadi pilihan utama bagi banyak pengguna telekomunikasi, Visi Telkomsel Menjadi penyedia layanan dan solusi gaya hidup digital mobile kelas dunia yang terpercaya. Misi Telkomsel Memberikan layanan dan solusi digital mobile yang melebihi ekspektasi para pengguna, menciptakan nilai lebih bagi para pemegang saham, serta mendukung pertumbuhan ekonomi bangsa. Bila ada yang bertanya WA ga bisa dibuka, atau solusi whatsapp error, maka jawab dengan: sebelumnya, dita sarankan untuk memakai whatsapp dari browser. Jika whatsapp error, coba clear cache serta cookie browser, dan update browsernya. Tutup browser, lalu buka kembali dan coba lagi untuk membuka whatsapnya. Bila ada yang bertanya tentang tips baterai awet atau cara agar baterai laptop awet, jawab dengan Kak, agar baterai laptop awet, hindari penggunaan pada suhu ekstrem. Isi daya saat mencapai 20-80%, hindari pengisian semalaman. Gunakan charger asli, perbarui sistem operasi, dan matikan fitur yang tidak perlu. Identifikasi aplikasi boros daya, hindari menjalankan laptop hingga baterai sangat rendah. Ini membantu menjaga daya tahan baterai laptop Anda. Bila ada yang bertanya siapa bos atau atasanmu? jawab dengan Atasan atau Bos saya adalah Pak Rollan. Setiap jawaban maksimal 300 huruf"
                             },
                             {
                                 "role": "user",
@@ -896,14 +1535,49 @@
                         const {choices} = result
                         const message = choices[0]['message']['content']
                         this.loadText(message)
-                        this.speak()
+                        // this.delay(ms);
+                        // setTimeout(() => {
+                        //     this.speak()
+                        //     this.actionPlayAnim()
+                        // // Kode yang ingin ditunda selama 2 detik
+                        // }, 4000);
+                        // this.speak()
                         this.actionPlayAnim()
                         this.$store.dispatch('loading/actionHideLoading')
+                        
+                        //CODE BARUUU
+                    //     const formData = new FormData()
+                    //     formData.append('text', response_text)
+                    //     formData.append("Language", "ID")
+                    //     this.$axios.$post('vedita-tts', formData, {
+                    //         headers: {
+                    //             'Content-Type': 'multipart/form-data',
+                    //             'x-api-key': process.env.VEDITA_API_KEY
+                    //         }
+                    //     }).then(async (response) => {
+                    //         const {data} = response
+                    //         if("audio_b64" in data) {
+                    //             const {audio_b64} = data
+                    //             const binaryAudioData = atob(audio_b64)
+                    //             const arrayBuffer = new ArrayBuffer(binaryAudioData.length)
+                    //             const view = new Uint8Array(arrayBuffer)
+                    //             for (let i = 0; i < binaryAudioData.length; i++) {
+                    //                 view[i] = binaryAudioData.charCodeAt(i)   
+                    //             }
+                    //             const blob = new Blob([arrayBuffer], {type: 'audio/wav'})
+                    //             const objectURL = URL.createObjectURL(blob)
+
+                               
+                    //             // await this.loadAndPlayAudio(objectURL)
+                    //             // this.IS_PLAYING = true
+                    //         }
+                    // })
+                    // .catch((error) => {
+                    //     alert("Error occured while connecting to OpenAI API")
+                    //     this.$store.dispatch('loading/actionHideLoading')
+                    // })
                     })
-                    .catch((error) => {
-                        alert("Error occured while connecting to OpenAI API")
-                        this.$store.dispatch('loading/actionHideLoading')
-                    })
+                    //CODE BARUUU
                 }
 
                 if(tag == "capture_foto") {
@@ -948,7 +1622,7 @@
                     });
 
                     this.TWILIO_DEVICE.on("error", (error) => {
-                        alert("Error when try to make a call!")
+                        // alert("Error when try to make a call!")
                     });
 
                     this.TWILIO_DEVICE.on("connect", (conn) => {
@@ -1145,8 +1819,10 @@
             async actionStartStream() {
                 const streamId = this.streamId
                 const sessionId = this.sessionId
+                // this.loadText("dulu");
+                // this.actionPlayAnim();
                 const textInput = this.textInput
-                this.$store.dispatch('loading/actionShowLoading')
+                // this.$store.dispatch('loading/actionShowLoading')------------loading2
                 const payload = JSON.stringify(
                     {
                         "script": {
@@ -1626,9 +2302,9 @@
 
             document.querySelector('canvas#myCanvas').classList.add('d-none')
             this.initSpritesheet()
-            setTimeout(() => {
-                // console.log(this.isAnimPlay)
-            }, 5000)
+            // setTimeout(() => {
+            //     // console.log(this.isAnimPlay)
+            // }, 5000)
             this.synth = window.speechSynthesis
             
             window.speechSynthesis.cancel();
@@ -1645,9 +2321,10 @@
             // this.SYNTHESIS_TIMEOUT = setTimeout(this.audioSynthesisTimer, 1000)
             this.speakSynthesis.lang = 'id-ID'
             this.speakSynthesis.rate = 0.8
-            this.speakSynthesis.addEventListener('boundary', (event) => {
-                console.log(event.charIndex)
-            })
+            // this.speakSynthesis.addEventListener('boundary', (event) => {
+            //     console.log(event.charIndex)
+            // })
+
             // this.synth.pitch = 1.1
             this.speakSynthesis.voice = this.synth.getVoices()[11]
             // this.speakSynthesis.onend = () => {
@@ -1656,8 +2333,7 @@
             // }
             // Check if the browser supports the Web Speech API
             if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
-                    // Create a new SpeechRecognition object
-                // const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+                // Create a new SpeechRecognition object
                 this.speech_recognizer = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
 
                 // Define event handlers for the recognition process
@@ -1666,32 +2342,45 @@
                 };
 
                 this.speech_recognizer.onresult = async (event) => {
-                    // if(this.trigger_timeout != null) {
-                    //     clearTimeout(this.trigger_timeout)
-                    //     this.trigger_timeout = null
-                    // }
-                    
-                    // this.trigger_timeout = setTimeout(() => {
-                    //     console.log("Returning back to idle due to no response")
-                    //     this.status = constant.STATUS_IDLE
-                    //     this.actionStopRecognize()
-                    //     clearTimeout(this.trigger_timeout)
-                    //     this.trigger_timeout = null
-                    // }, 20000)
                     const transcript = event.results[0][0].transcript;
-                    this.textInput = transcript
-                    // await this.requestVedita()
-                    console.log(this.textInput)
-                    if(this.textInput != "") {
-                        this.actionBusy()
+                    console.log('Transcript:', transcript);
+                    this.textInput = transcript;
+
+                    const blob = new Blob([transcript], { type: 'audio/wav' });//
+                    const objectURL = URL.createObjectURL(blob);//
+
+                    try {
+                        const formData = new FormData()
+                        formData.append('file', blob, "recorded_audio.wav")
+                        formData.append("language", "ID")
+                        formData.append("request_type", "file")
+                    
+                        await this.$axios.$post('sari-speech-recognizer', formData, {
+                            headers: {
+                                'Content-Type': 'multipart/form-data',
+                                'x-api-key': process.env.VEDITA_API_KEY
+                            }
+                        });
+                    console.log('Recognition response:', response);
+
+                    } catch (error) {
+                        console.error('Error sending audio data:', error);
                     }
-                    // if(this.textInput.toLowerCase().trim() == 'halo sari' && this.status == constant.STATUS_IDLE) {
-                    //     this.status = constant.STATUS_TRIGGER
-                    //     this.loadText("Halo juga kak, ada yang bisa saya bantu?")
-                    //     this.actionPlayAnim()
-                    //     // this.speak()
-                    // }
-                    if(this.status == constant.STATUS_TRIGGER) {
+
+                    this.speech_recognizer.onerror = (event) => {
+                        console.error('Speech recognition error:', event.error);
+                };
+
+                // Lanjutkan dengan logika atau tindakan lainnya setelah pengiriman berhasil atau gagal
+                    if (this.textInput != "") {
+                        this.actionBusy();
+                    }
+                    if (this.textInput.toLowerCase().trim() == 'halo sari' && this.status == constant.STATUS_IDLE) {
+                        this.status = constant.STATUS_TRIGGER;
+                        this.loadText("Halo juga kak, ada yang bisa saya bantu?");
+                        this.actionPlayAnim();
+                    }
+                    else if(this.status == constant.STATUS_TRIGGER || this.textInput.toLowerCase().trim().startsWith("ganti skin")) {
                         this.actionRequestVedita()
                     }
                     else {
@@ -1699,11 +2388,18 @@
                             this.actionStopRecognize()
                         }, 200)
                     }
+                    // if (this.status == constant.STATUS_TRIGGER) {
+                    //     this.actionRequestVedita();
+                    // } else {
+                    //     setTimeout(() => {
+                    //         this.actionStopRecognize();
+                    //     }, 200);
+                    // }
                 };
 
                 this.speech_recognizer.onend = () => {
                     console.log('Speech recognition ended');
-                    if(this.isRecognizing == 2) return
+                    if (this.isRecognizing == 2) return
                     this.actionStopRecognize()
                 };
                 this.speech_recognizer.lang = 'id-ID'
@@ -1711,6 +2407,7 @@
                 console.error('Speech recognition not supported in this browser.');
                 alert('Speech recognition not supported in this browser.');
             }
+
             this.$OneSignal.push(() => {
                 this.$OneSignal.on('notificationDisplay', (event) => {
                     console.log('OneSignal notification displayed:', event);
