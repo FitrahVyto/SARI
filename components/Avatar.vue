@@ -1,0 +1,2384 @@
+<style scoped>
+    #mainInput {
+        position: fixed;
+        bottom: 50px;
+        z-index: 999;
+        width: 100%;
+        left: 0;
+    }
+    #recognizeInformation {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        padding-left: 10px;
+    }
+
+    #callDuration {
+        margin-left: 100px;
+        font-size: 24px;
+    }
+
+    #div-call-in-progress {
+        margin-left: 40px;
+    }
+
+    #modal-call-in-progress-body {
+        background-image: url('/img/user.png');
+        background-size: cover;
+    }
+
+    #modal-incomming-call-body{
+        background-image: url('/img/user.png');
+        background-size: cover;
+    }
+</style>
+<template>
+    <div class="container h-100">
+        <div id="recognizeInformation">
+            <p class="text-success" v-if="isRecognizing == 1">Listening...</p>
+            <p class="text-danger" v-if="isRecognizing == 0">Not Listening!</p>
+        </div>
+        <b-modal class="modal-item" centered v-model="IS_DIALUP_MODAL_OPEN" @hide="onDialUpModalClose" no-close-on-backdrop hide-footer size="sm" hide-header>
+            <div class="modal-header">
+                <div id="callDuration"></div>
+            </div>
+            <div class="modal-body" id="modal-call-in-progress-body" style="height: 300px;">
+                <div class="mx-auto">
+                    <h4 id="txtPhoneNumber" style="text-align: center;">{{ phoneNumber }}</h4>
+                </div>
+            </div>
+            <div class="modal-footer mx-auto justify-content-center mt-2">
+                <button type="button" class="btn btn btn-default btn-circle btnHangUp" @click="actionHangUp()">
+                    <i class="fa fa-phone fa-2x fa-rotate-icon" aria-hidden="true" style="color: red;"></i>
+                </button>
+            </div>
+        </b-modal>
+        <b-modal class="modal-item" centered v-model="IS_CAMERA_MODAL_OPEN" @hide="onCameraModalClose" hide-footer size="md" hide-header>
+            <h1>Camera</h1>
+            <div class="w-100">
+                <div class="w-100 h-100 d-flex align-items-center justify-content-center mt-4">
+                    <h3 class="text-center" v-if="CAMERA_STREAM == null && CAPTURED_IMAGE == null">The Camera is starting...</h3>
+                </div>
+                <video id="cameraFeed" ref="cameraFeed" class="w-100" autoplay :class="{'d-none': CAPTURED_IMAGE != null || CAMERA_STREAM == null}"></video>
+            </div>
+            <div class="d-flex justify-content-center mb-3">
+                <canvas id="canvasPhoto" class="w-100 d-none" ref="canvasPhoto"></canvas>
+                <img :src="CAPTURED_IMAGE" alt="taken_photos" :class="{'d-none': CAPTURED_IMAGE == null}" class="img-fluid" >
+            </div>
+            <div class="d-block mb-3">
+                <button class="btn btn-primary btn-block" @click="actionTakePicture()" v-if="CAPTURED_IMAGE == null">Take a picture</button>
+                <button class="btn btn-success btn-block mb-3" @click="actionDownloadPicture()" v-if="CAPTURED_IMAGE != null">Download Picture</button>
+                <button class="btn btn-primary btn-block" @click="actionRetakePicture()" v-if="CAPTURED_IMAGE != null">Take Picture again</button>
+            </div>
+            <div class="d-flex justify-content-end">
+                <button class="btn btn-danger" @click="actionCloseCameraModal()">Close</button>
+            </div>
+        </b-modal>
+        <div class="d-flex justify-content-center align-items-start w-100 h-100 d-none">
+            <audio id="audioPlayer"  src="" class="d-none" ref="audioPlayer"></audio>
+            <video id="talkVideo" class="img-fluid" controls autoplay ref="talkVideo" style="position: fixed; top: -9910px; visibility: hidden;"></video>
+            <!-- <img ref="img_source" src="img/sari_tes_head4.png" alt="SARI GRAPARI 4" class="img-fluid" style="position: absolute; top: 10px; right: 10px;" /> -->
+        </div>
+        <div>
+            <div id="mainInput">
+                <div class="w-100 h-100" v-if="DEBUG_MODE == 'true'" style="position: relative; z-index: 99999;">
+                    <div class="d-flex justify-content-center align-items-center mb-2">
+                        <input class="form-control w-50" v-model="textInput" placeholder="Type your text...">
+                    </div>
+                    <div class="d-flex justify-content-center align-items-center mb-2">
+                        <button class="btn btn-success w-50" @click="actionRequestVedita()">Request</button>
+                    </div>
+                    <div class="d-flex justify-content-center align-items-center mb-2">
+                        <!-- <button class="btn btn-primary w-50" @click="actionSpeak()">Speak</button> -->
+                    </div>
+                    <div class="d-flex justify-content-center align-items-center mb-2">
+                        <!-- <button class="btn btn-warning w-50 text-white" @click="actionCall()">Telpon</button> -->
+                    </div>
+                </div>
+                <div class="d-flex justify-content-center align-items-center">
+                    <button class="btn btn-primary text-white rounded-circle px-4 py-4" @click="actionStartRecognize()" v-if="!isRecognizing">
+                        <span>
+                            <i class="fa fa-microphone fa-3x"></i>
+                        </span>
+                    </button>
+                    <button class="btn btn-danger text-white rounded-circle px-4 py-4" @click="actionStopRecognize()" v-else>
+                        <span>
+                            <i class="fa fa-microphone fa-3x"></i>
+                        </span>
+                    </button>
+                </div>
+                <canvas id="myCanvas" ref="myCanvas" class="talking-avatar rendered-avatar" style="position: fixed; top: 10px; left: 10px;" width="920" height="1595"></canvas>
+            </div>
+        </div>
+        <!-- <canvas id="tmp" ref="tmp" class="talking-avatar" style="visibility: hidden; position: fixed; left: -999990px; top: 0;" width="512" height="512"></canvas> -->
+        <!-- <canvas id="ca" ref="ca" class="talking-avatar rendered-avatar" style="position: fixed; top: 10px; left: 10px;" width="920" height="1595"></canvas> -->
+    </div>
+</template>
+<script>
+    // import { maptextInputActions } from 'vuex';
+    import Phaser from 'phaser'
+    import data from "../static/json/spritesheet.json"
+    import constant from '../config/constant'
+    let currentIndex = 0;
+
+    export default {
+        data() {
+            return {
+                Game: null,
+                textInput: "",
+                selectedSprite: [],
+                spriteAnim: [],
+                phaserObj: null,
+                isAnimPlay: false,
+                synth: null,
+                speakSynthesis: null,
+                speech_recognizer: null,
+                isRecognizing: 0,
+                RECORD: null,
+                IS_PLAYING: false,
+                IS_CAMERA_MODAL_OPEN: false,
+                CAMERA_STREAM: null,
+                AUDIO_CONTEXT: null,
+                STREAM: null,
+                CAPTURED_IMAGE: null,
+                DEBUG_MODE: process.env.DEBUG_MODE,
+                SYNTHESIS_TIMEOUT: null,
+                status: constant.STATUS_TRIGGER,
+                trigger_timeout: null,
+                IS_DIALUP_MODAL_OPEN: false,
+                TWILIO_DEVICE: null,
+                callDuration: "00:00",
+                phoneNumber: "",
+                streamId: "",
+                sessionId: "",
+                peerConnection: null,
+                videoIsPlaying: false,
+                lastBytesReceived: 0,
+                status: 0,
+            }
+        },
+        watch: {
+            // "isAnimPlay": {
+            //     handler: function(value) {
+            //         console.log(value)
+            //         if(value == true) {
+            //             document.querySelector('canvas:not(.talking-avatar)').classList.add('show')
+            //         }
+            //         else {
+            //             document.querySelector('canvas:not(.talking-avatar)').classList.remove('show')
+            //         }
+            //     }
+            // },
+            "isRecognizing": {
+                handler: function(value) {
+                    // if(value == 0) {
+                    //     setTimeout(() => {
+                    //         this.actionStartRecognize()
+                    //     }, 200)
+                    // }
+                }
+            }
+        },
+        methods: {
+            log(message) {
+                var logDiv = document.getElementById("log");
+                logDiv.innerHTML += "<p>&gt;&nbsp;" + message + "</p>";
+                logDiv.scrollTop = logDiv.scrollHeight;
+            },
+            showCallDuration() {
+                var time;
+                let output = document.getElementById('callDuration');
+                let ms = 0;
+                let sec = 0;
+                let min = 0;
+
+                function timer() {
+                    ms++;
+                    if (ms >= 100) {
+                        sec++
+                        ms = 0
+                    }
+                    if (sec === 60) {
+                        min++
+                        sec = 0
+                    }
+                    if (min === 60) {
+                        ms,
+                            sec,
+                            min = 0;
+                    }
+
+                    let milli = ms < 10 ? `0` + ms : ms;
+                    let seconds = sec < 10 ? `0` + sec : sec;
+                    let minute = min < 10 ? `0` + min : min;
+
+                    let timer = `${minute}:${seconds}`;
+                    output.innerHTML = timer;
+                };
+
+                //Start timer
+                function start() {
+                    time = setInterval(timer, 10);
+                }
+
+                //stop timer
+                function stop() {
+                    clearInterval(time)
+                }
+                
+                //reset timer
+                function reset() {
+                    ms = 0;
+                    sec = 0;
+                    min = 0;
+
+                    output.innerHTML = `00:00:00`
+                }
+
+                // start the timer
+                start()
+
+                $("#modal-call-in-progress").on('hidden.bs.modal', function () {
+                    stop()
+                });
+
+            },
+            actionCall(phoneNumber = "") {
+                phoneNumber = phoneNumber.trim()
+                if(phoneNumber == "") {
+                    return
+                }
+                else {
+                    if(this.TWILIO_DEVICE == null || this.textInput == "" || this.textInput == null || this.textInput == undefined) return
+                    if(phoneNumber == "" && this.textInput != "") {
+                        phoneNumber = this.textInput
+                    }
+                    console.log("Nomor Telpon:", phoneNumber)
+                }
+                this.phoneNumber = phoneNumber.trim()
+                if(!this.phoneNumber.startsWith('+')) {
+                    if(this.phoneNumber.startsWith('62')) {
+                        this.phoneNumber = `+${this.phoneNumber}`
+                    }
+                    else if(this.phoneNumber.startsWith("8")) {
+                        this.phoneNumber = this.phoneNumber.substring(1)
+                        this.phoneNumber = `+62${this.phoneNumber}`
+                    }
+                    else if( this.phoneNumber.startsWith('08')) {
+                        this.phoneNumber = this.phoneNumber.slice(1, this.phoneNumber.split('').length)
+                        this.phoneNumber = `+62${this.phoneNumber}`
+                    }
+                }
+                else if(this.phoneNumber.startsWith("08")) {
+                    this.phoneNumber = this.phoneNumber.slice(1, this.phoneNumber.split('').length)
+                    this.phoneNumber = `+62${this.phoneNumber}`
+                }
+                if(!this.phoneNumber.startsWith('+62') && !this.phoneNumber.startsWith('08')) {
+                    alert("Nomor HP tidak valid")
+                    return
+                }
+                this.actionBusy()
+                var outgoingConnection = this.TWILIO_DEVICE.connect({
+                    To: this.phoneNumber
+                })
+                outgoingConnection.on("ringing", () => {
+                    console.log("Phone ringing")
+                })
+                // this.actionOpenDialUpModal()
+            },
+            actionHangUp() {
+                if(this.TWILIO_DEVICE != null) {
+                    this.TWILIO_DEVICE.disconnectAll()
+                }
+                this.actionCloseDialUpModal()
+                this.actionStopRecognize()
+            },
+            actionDownloadPicture() {
+                const blob = this.dataURItoBlob(this.CAPTURED_IMAGE)
+                const downloadLink = document.createElement('a')
+                downloadLink.href = window.URL.createObjectURL(blob)
+                downloadLink.download = 'captured_image.jpg'
+                downloadLink.click()
+            },
+            dataURItoBlob(dataURI) {
+                const byteString = atob(dataURI.split(',')[1]);
+                const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+                const ab = new ArrayBuffer(byteString.length);
+                const ia = new Uint8Array(ab);
+                for (let i = 0; i < byteString.length; i++) {
+                    ia[i] = byteString.charCodeAt(i);
+                }
+                return new Blob([ab], { type: mimeString });
+            },
+            actionRetakePicture() {
+                this.stopCamera()
+                this.CAPTURED_IMAGE = null
+                this.startCamera()
+            },
+            actionTakePicture() {
+                const desiredWidth = 1280; // Adjust to your desired width
+                const desiredHeight = 720; // Adjust to your desired height
+                this.$refs.canvasPhoto.width = desiredWidth
+                this.$refs.canvasPhoto.height = desiredHeight
+                this.$refs.canvasPhoto.getContext('2d').drawImage(this.$refs.cameraFeed, 0, 0, desiredWidth, desiredHeight)
+                this.CAPTURED_IMAGE = this.$refs.canvasPhoto.toDataURL('image/jpeg')
+                this.stopCamera()
+            },
+            onCameraModalClose() {
+                this.IS_CAMERA_MODAL_OPEN = false
+                this.CAPTURED_IMAGE = null
+                this.stopCamera()
+            },
+            onDialUpModalClose(event) {
+                // this.actionCloseDialUpModal()
+            },
+            actionOpenDialUpModal() {
+                this.IS_DIALUP_MODAL_OPEN = true
+            },
+            actionCloseDialUpModal() {
+                this.IS_DIALUP_MODAL_OPEN = false
+            },
+            actionCloseCameraModal() {
+                this.IS_CAMERA_MODAL_OPEN = false
+                this.CAPTURED_IMAGE = null
+                this.stopCamera()
+            },
+            audioSynthesisTimer() {
+                window.speechSynthesis.pause();
+                window.speechSynthesis.resume();
+                this.SYNTHESIS_TIMEOUT = setTimeout(this.audioSynthesisTimer, 1000);
+            },
+            stopCamera() {
+                if(this.CAMERA_STREAM != null) {
+                    console.log("TESTING")
+                    const tracks = this.CAMERA_STREAM.getTracks()
+                    tracks.forEach((track) => {
+                        track.stop()
+                    })
+                    this.$refs.cameraFeed.srcObject = null
+                    this.CAMERA_STREAM = null
+                }
+            },
+            async startCamera() {
+                try {
+                    this.CAMERA_STREAM = await navigator.mediaDevices.getUserMedia({video: true})
+                    this.$refs.cameraFeed.srcObject = this.CAMERA_STREAM
+                } catch (error) {
+                    alert("Cannot start camera. Make sure you enabled camera permission")
+                }
+            },
+            actionOpenCameraModal() {
+                this.IS_CAMERA_MODAL_OPEN = true
+                this.startCamera()
+            },
+            actionBusy() {
+                this.speech_recognizer.stop()
+                this.isRecognizing = 2
+            },
+            async actionStartRecognize() {
+                if(this.isRecognizing == 1 || this.speech_recognizer.isListening) return
+                this.speech_recognizer.start()
+                this.isRecognizing = 1
+
+                // this.STREAM = await navigator.mediaDevices.getUserMedia({audio: true, video: false})
+                // this.AUDIO_CONTEXT = new AudioContext();
+                // let input = this.AUDIO_CONTEXT.createMediaStreamSource(this.STREAM);
+                // this.RECORD = new Recorder(input,{numChannels:1})
+                // this.RECORD.record()
+                // this.isRecognizing = 1
+                // console.log("START RECORDING...")
+            },
+
+            actionSpeak() {
+                this.loadText(this.textInput)
+                this.actionPlayAnim()
+            },
+            actionStopRecognize(callback = false) {
+                // this.RECORD.stop()
+                this.speech_recognizer.stop()
+                // this.STREAM.getAudioTracks()[0].stop()
+                this.isRecognizing = 0
+                
+                if(callback !== false) {
+                    this.speech_recognizer.exportWAV(callback)
+                    this.RECORD.exportWAV(callback)
+                }
+            },
+
+            async loadAndPlayAudio(objectURL) {
+               document.querySelector("#audioPlayer").src = objectURL
+              await document.querySelector("#audioPlayer").play()
+                this.IS_PLAYING = true
+            },
+
+            afterRecord(audio_blob) {
+                
+                this.loading = "/img/loading.gif";
+                this.mic_img = null;
+                this.text_info = null;
+                // this.text_info2 = "LOADING";                
+                // this.showLoading()
+                const formData = new FormData()
+                formData.append('file', audio_blob, "recorded_audio.wav")
+                formData.append("language", "ID")
+                formData.append("request_type", "file")
+                this.$axios.$post('sari-speech-recognizer', formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data',
+                        'x-api-key': process.env.VEDITA_API_KEY
+                    }
+                }).then(async (response) => {
+                this.loading = "/img/loading.gif";
+                this.mic_img = null;
+                this.text_info = null;
+                // this.text_info2 = "LOADING";  
+                    const {data} = response
+                    const {text} = data
+                }).catch(error => {
+                            console.error('Gagal mengirim hasil audio ke endpoint:', error);
+                            console.error('Data yang Dikirim:', audioFormData);
+                            console.error('Error:', error.response.data); // Jika ada tanggapan error dari server
+                });
+                
+            },
+
+//             afterRecord(audio_blob) {
+//                 // Menampilkan gambar loading dan menghilangkan gambar mikrofon serta teks informasi
+//                 this.loading = "/img/loading.gif";
+//                 this.mic_img = null;
+//                 this.text_info = null;
+
+//                 // Membuat objek FormData untuk mengirim data audio
+//                 const formData = new FormData()
+//                 formData.append('file', audio_blob, "recorded_audio.wav")
+//                 formData.append("language", this.LANGUAGE)
+//                 formData.append("request_type", "file")
+
+//                 // Mengirim data audio ke API speech recognizer
+//                 this.$axios.$post('vedita-speech-recognizer', formData, {
+//                     headers: {
+//                         'Content-Type': 'multipart/form-data',
+//                         'x-api-key': process.env.ACCESS_TOKEN
+//                     }
+//                 }).then(async (response) => {
+//                     // Menampilkan gambar loading dan menghilangkan gambar mikrofon serta teks informasi
+//                 this.loading = "/img/loading.gif";
+//                 this.mic_img = null;
+//                 this.text_info = null;
+
+//                     // Mendapatkan teks hasil pengenalan suara dari respons API
+//                     const { data } = response
+//                     const { text } = data
+
+//                     const options = {
+//                     position: 'top-center',
+//                     duration: 5000, // Set the desired duration in milliseconds
+//                     theme: 'bubble',
+//                     fullWidth : true,
+//                     };
+//                     const customHtml = `
+//                                 <div style="color: #fff; font-size: 28px; padding: 10px; border-radius: 5px;">
+//                                 <strong>`+text+`</strong><br>
+//                                 </div>
+//                             `;
+//                         this.$toast.success(customHtml, options);
+
+//                         // Array berisi frasa-frasa spesifik untuk diidentifikasi dalam teks
+//                         const specificPhrases = ["perkenalkan diri", "siapa namamu", "siapa nama", "siapa kamu","siapa nama", "siapa dirimu","apa kabarmu","apa kabar","kabar","direktur","namamu","pantun", "kata mutiara","quotes","seputar telkomsel", "terima kasih","halo vedita", "hai vedita"];
+
+//                     // Memeriksa apakah teks mengandung salah satu frasa spesifik
+//                     const containsSpecificPhrase = specificPhrases.some(phrase => text.includes(phrase));
+
+//                     // Jika tidak mengandung frasa spesifik, memulai interval untuk menjalankan fungsi randomUcapan setiap 5 detik
+//                     if (containsSpecificPhrase) {
+//                     }else{
+//                         await this.randomUcapan();
+//                         intervalId = await setInterval(async () => await this.randomUcapan(), 5000);
+//                         setTimeout(() => {
+//                             console.log("Delay untuk menghindari tabrakan antar fungsi");
+//                         }, 1000);
+//                     }
+
+//                     // Jika teks kosong, langsung kembali
+//                     if (text == "") {
+//                         return;
+//                     }
+
+//                     // Membuat payload untuk mengirim permintaan ke API GPT-3.5 Turbo
+//                     const payload = JSON.stringify({
+//                         'model': "gpt-3.5-turbo",
+//                         "messages": [
+//                         {
+//                             "role": "system",
+//                             "content": "Kamu adalah VeDita, bila ada yang bertanya selalu sebut dengan nama Kak, bila ada yang bertanya siapa kamu, atau siapa namamu, jawab dengan perkenalkan aku Vedita, Digital Assistance, kakak cukup panggil dengan Dita. Bila ada yang bertanya bisa pantun, jawab dengan Oke, bisa. Makan lalapan sayurnya kemangi. Kalau butuh bantuan, Vedita siap melayani! Bila ada yang berkata terima kasih, jawab dengan salah satu kalimat berikut dengan senang hati kak, sama-sama kak, atau senang bisa membantu. Bila ada yang bertanya spesifik tentang Laptopku lemot jawab dengan Tenang, jangan emosi kak. Coba tekan windows + R kemudian ketik %temp% hapus semua temporary datanya, setelah itu buka task manager dan end task semua yang prosesnya tinggi. Bila ada yang bertanya kabar, jawab dengan Hari ini aku sangat bahagia sekali, karena aku bisa ngobrol sama banyak orang. Bila ada yang bertanya Siapa nama Direktur Utama Telkomsel, jawab dengan Direktur Utama Telkomsel saat ini adalah Bapak Nugroho, atau yang biasa dipanggil Pak Nugi. Bila ada yang bertanya Siapa nama Direktur IT Telkomsel, jawab dengan Direktur IT Telkomsel saat ini adalah Bapak Bharat Alva, atau yang biasa dipanggil Pak Alva. Bila ada yang bertanya Siapa nama Direktur Sales Telkomsel, jawab dengan Direktur Sales Telkomsel saat ini adalah Bapak Adiwinahyu Basuki Sigit, atau yang biasa dipanggil pak Sigit. Bila ada yang bertanya Siapa nama Direktur Marketing Telkomsel, jawab dengan Direktur Marketing Telkomsel saat ini adalah Bapak Derrick. Bila ada yang bertanya Siapa nama Direktur Network Telkomsel, jawab dengan Direktur Network Telkomsel saat ini adalah Bapak Indra Mardiatna, atau yang biasa dipanggil pak Indram. Bila ada yang bertanya Siapa nama Direktur HCM Telkomsel, jawab dengan Direktur HCM Telkomsel saat ini adalah Bapak Muharam Perbawamukti, atau yang biasa dipanggil pak Endi. Bila ada yang bertanya Siapa nama Direktur Planning & transformation Telkomsel, jawab dengan Direktur Planning dan transformasi Telkomsel saat ini adalah Bapak Muharam Perbawamukti, atau yang biasa dipanggil pak Endi. Jika ada yang bertanya, selalu panggil dengan nama Kak dan jawab dengan yang singkat dan jelas ya. Jika ada yang bertanya solusi laptop panas, jawab dengan, Baik kak saran dari VeDita, untuk atasi laptop yang sering panas, coba bersihkan ventilasi secara berkala dan gunakan alas pendingin. Selain itu, atur manajemen daya, tutup aplikasi yang tidak dipakai, dan periksa keberadaan malware. Selalu perbarui driver perangkat keras dan hindari menggunakan laptop di permukaan lunak. Kalau bisa, ganti pasta thermal pada prosesor untuk tingkatkan konduktivitas panas ya kak. Jika ada yang bertanya kata mutiara atau quotes, jawab dengan Semuanya bisa menjadi mungkin jika kau memiliki kedamaian batin. Begitu kata Master Shifu. Jika ada yang bertanya seputar telkomsel, jawab dengan Telkomsel Sebagai salah satu operator telekomunikasi terbesar di Indonesia, Telkomsel memiliki jangkauan jaringan yang luas dan telah menjadi pilihan utama bagi banyak pengguna telekomunikasi, Visi Telkomsel Menjadi penyedia layanan dan solusi gaya hidup digital mobile kelas dunia yang terpercaya. Misi Telkomsel Memberikan layanan dan solusi digital mobile yang melebihi ekspektasi para pengguna, menciptakan nilai lebih bagi para pemegang saham, serta mendukung pertumbuhan ekonomi bangsa. Bila ada yang bertanya WA ga bisa dibuka, atau solusi whatsapp error, maka jawab dengan: sebelumnya, dita sarankan untuk memakai whatsapp dari browser. Jika whatsapp error, coba clear cache serta cookie browser, dan update browsernya. Tutup browser, lalu buka kembali dan coba lagi untuk membuka whatsapnya. Bila ada yang bertanya tentang tips baterai awet atau cara agar baterai laptop awet, jawab dengan Kak, agar baterai laptop awet, hindari penggunaan pada suhu ekstrem. Isi daya saat mencapai 20-80%, hindari pengisian semalaman. Gunakan charger asli, perbarui sistem operasi, dan matikan fitur yang tidak perlu. Identifikasi aplikasi boros daya, hindari menjalankan laptop hingga baterai sangat rendah. Ini membantu menjaga daya tahan baterai laptop Anda. Bila ada yang bertanya halo Vedita atau Hai Vedita jawab dengan halo jg kak ada yg bisa vedita bantu. Bila ada yang bertanya siapa bos atau atasanmu? jawab dengan Atasan atau Bos saya adalah Pak Rollan. Setiap jawaban maksimal 300 huruf."
+//                         },
+
+//                         {
+//                                 "role": "user",
+//                                 "content": text
+//                             },
+
+//                         ]
+//                     })
+
+//                     // Header untuk mengirim permintaan ke API GPT-3.5 Turbo
+//                     const headers = {
+//                         'Content-Type': 'application/json',
+//                         'Authorization': `Bearer ${process.env.OPENAI_TOKEN}`
+//                     }
+                
+//                     // Mengirim permintaan ke API OpenAI untuk menyelesaikan chat dengan menggunakan payload yang berisi pesan pengguna dan token otorisasi
+//                     fetch("https://api.openai.com/v1/chat/completions", {
+//                         method: 'POST',
+//                         headers: headers,
+//                         body: payload
+//                     }).then((response) => {
+//                         // Memeriksa apakah respon berhasil
+//                         if(!response.ok) {
+//                             throw new Error("Network response was not ok")
+//                         }
+//                         // Mengembalikan respon dalam bentuk JSON
+//                         return response.json()
+//                     }).then(async (result) => {
+//                         // Mengatur tampilan kembali ke normal setelah proses selesai
+//                         this.loading = null;
+//                         this.mic_img = "/img/mic-blue.png";
+//                         this.text_info = "Klik tombol Mulai Record untuk mulai berbicara";
+//                         // Menyembunyikan ikon loading
+//                         this.hideLoading()
+//                         // Mendapatkan hasil dari API OpenAI
+//                         const {choices} = result
+                        
+//                         // Menampilkan pesan balasan menggunakan toast
+//                         const options = {
+//                             position: 'top-center',
+//                             duration: 20000, // Durasi tampilan pesan dalam milidetik
+//                             theme: 'bubble',
+//                             fullWidth : true,
+//                         };
+                        
+//                         console.log(choices[0]["message"]["content"])
+//                         // Mendapatkan pesan balasan
+//                         const message = choices[0]['message']['content']
+
+//                         // Memodifikasi teks sesuai kebutuhan sebelum menampilkannya
+//                         let customtext =  choices[0]["message"]["content"];
+//                         if ( customtext.includes("Rollan")) {
+//                             customtext = customtext.replace("Rollan", "Rolland");
+//                         }
+
+//                         // Menampilkan pesan balasan dengan menggunakan toast
+//                         this.$toast.show(customtext,options);
+
+//                         // Menghentikan pengulangan jika sedang ada
+//                         await clearInterval(intervalId);
+
+//                             // Mengatur penundaan sebelum memainkan audio jika sedang dalam proses pemutaran audio sebelumnya
+//                             if (this.IS_PLAYING) {
+//                                 await this.delay(2000);
+//                             }
+//                                 if (this.IS_PLAYING) {
+//                                     await this.delay(2000);
+//                                 }
+
+//                         // Mengirim pesan balasan ke server untuk dikonversi menjadi audio
+//                         const formData = new FormData()
+//                         formData.append('text', message)
+//                         formData.append('language', this.LANGUAGE)
+//                         this.$axios.$post('vedita-tts', formData, {
+//                             headers: {
+//                                 'Content-Type': 'multipart/form-data',
+//                                 'x-api-key': process.env.ACCESS_TOKEN
+//                             }
+//                         }).then(async (response) => {
+//                             // Mendapatkan data respons dari server
+//                             const {data} = response
+//                             // Memeriksa apakah audio tersedia dalam respons
+//                             if("audio_b64" in data) {
+//                                 // Mendapatkan data audio dalam bentuk base64
+//                                 const {audio_b64} = data
+//                                 // Mendekode data audio base64
+//                                 const binaryAudioData = atob(audio_b64)
+//                                 // Membuat array buffer
+//                                 const arrayBuffer = new ArrayBuffer(binaryAudioData.length)
+//                                 const view = new Uint8Array(arrayBuffer)
+//                                 for (let i = 0; i < binaryAudioData.length; i++) {
+//                                     view[i] = binaryAudioData.charCodeAt(i)   
+//                                 }
+//                                 // Membuat blob audio dari array buffer
+//                                 const blob = new Blob([arrayBuffer], {type: 'audio/wav'})
+//                                 // Membuat URL objek dari blob audio
+//                                 const objectURL = URL.createObjectURL(blob)
+//                                 // Memuat dan memainkan audio
+//                                 await this.loadAndPlayAudio(objectURL)
+//                                 this.IS_PLAYING = true
+//                             }
+//                         }).catch((error) => {
+//                             // Menghentikan pengulangan jika sedang ada
+//                             clearInterval(intervalId);
+//                             // Menyembunyikan ikon loading
+//                             this.hideLoading()
+//                             // Mengatur interval untuk kembali ke mode diam jika diperlukan
+//                             // this.IDLE_INTERVAL = setInterval(this.setIdle, this.INTERVAL_TIME)
+//                         })
+//                     })
+
+// // Kode di atas menjelaskan proses pengiriman permintaan ke API OpenAI 
+// // untuk menyelesaikan chat berdasarkan input pengguna. Setelah menerima respons, 
+// // pesan balasan dari OpenAI diproses, dimodifikasi, dan ditampilkan ke pengguna 
+// // menggunakan komponen toast. Selain itu, respons juga dikirim ke server untuk 
+// // dikonversi menjadi audio, yang kemudian dimuat dan diputar.
+
+//                     .catch(error => {
+//                         // Menghentikan pengulangan jika sedang ada
+//                         clearInterval(intervalId);
+//                         // Menangani kesalahan yang terjadi
+//                         // Menyembunyikan ikon loading dan mengatur tampilan kembali ke normal
+//                         this.hideLoading()
+//                         this.loading = null;
+//                         this.mic_img = "/img/mic-blue.png";
+//                         this.text_info = "Klik tombol Mulai Record untuk mulai berbicara";
+//                         // this.text_info2 = null
+//                         // Log kesalahan ke konsol dan tampilkan pesan kesalahan
+//                         console.error('Fetch error:', error);
+//                         alert(error);
+//                         // Menghasilkan satu kalimat acak untuk memberikan respons kepada pengguna
+//             const randomSentences1 = [
+//             "Mohon maaf suara Anda kurang jelas, silahkan diulang kembali",
+//         ];
+//         const randomIndex1 = Math.floor(Math.random() * randomSentences1.length);
+//         const randomSentence1 = randomSentences1[randomIndex1];
+//         // Membuat objek FormData untuk mengirim teks respons ke server TTS
+//         const formData = new FormData();
+//         formData.append('text', randomSentence1);
+//         // Mengirim permintaan ke server TTS untuk mengonversi teks respons menjadi audio
+//         this.$axios
+//             .$post('vedita-tts', formData, {
+//                 headers: {
+//                     'Content-Type': 'multipart/form-data',
+//                     'x-api-key': process.env.ACCESS_TOKEN,
+//                 },
+//             })
+//             .then((response) => {
+//                 // Mengambil informasi promo dari server setelah mengonversi teks respons menjadi audio
+//                 this.$axios
+//                     .$get('vedita-info-promo')
+//                     .then((promoResponse) => {
+//                         // Memeriksa kode status respon dan mengatur PROMO jika berhasil
+//                         if (promoResponse['status_code'] !== 200) {
+//                             this.PROMO = promoResponse['data'];
+//                         }
+//                     });
+//                 // Menyembunyikan ikon loading setelah selesai
+//                 this.hideLoading();
+//                 const { data } = response;
+//                 // Memeriksa apakah audio tersedia dalam respons
+//                 if ("audio_b64" in data) {
+//                     // Mendapatkan data audio dalam bentuk base64
+//                     const { audio_b64 } = data;
+//                     // Mendekode data audio base64
+//                     const binaryAudioData = atob(audio_b64);
+//                     // Membuat array buffer
+//                     const arrayBuffer = new ArrayBuffer(binaryAudioData.length);
+//                     const view = new Uint8Array(arrayBuffer);
+//                     for (let i = 0; i < binaryAudioData.length; i++) {
+//                         view[i] = binaryAudioData.charCodeAt(i);
+//                     }
+//                     // Membuat blob audio dari array buffer
+//                     const blob = new Blob([arrayBuffer], { type: 'audio/wav' });
+//                     // Membuat URL objek dari blob audio
+//                     const objectURL = URL.createObjectURL(blob);
+//                     // Memuat dan memainkan audio
+//                     this.loadAndPlayAudio(objectURL);
+//                     // Mengatur status VEDITA_STATUS kembali ke kategori
+//                     this.VEDITA_STATUS = constant.VEDITA_STATUS_CATEGORY;
+//                     // Mengatur status pemutaran audio menjadi aktif
+//                     this.IS_PLAYING = true;
+//                 }
+//             });
+//         });
+// })
+
+// // Kode di atas menjelaskan proses penanganan kesalahan yang terjadi saat mengirim 
+// // permintaan ke server. Ketika terjadi kesalahan, pengulangan (jika ada) dihentikan, 
+// // ikon loading disembunyikan, dan tampilan kembali ke normal. Selanjutnya, 
+// // kesalahan dilogkan ke konsol dan pesan kesalahan ditampilkan kepada pengguna. 
+// // Kemudian, kode menghasilkan satu kalimat acak sebagai respons untuk memberikan umpan
+// //  balik kepada pengguna. Kalimat tersebut dikonversi menjadi audio oleh server TTS,
+// //   dan setelah selesai, informasi promo diambil dari server. Setelah semua proses 
+// //   selesai, ikon loading disembunyikan lagi, dan audio diputar dengan mengatur 
+// //   status VEDITA_STATUS kembali ke kategori dan status pemutaran audio menjadi aktif.
+
+// .catch((error) => {
+//     // Menghentikan indikator loading dan mengatur gambar mikrofon kembali ke gambar biru
+//     this.loading = null;
+//     this.mic_img = "/img/mic-blue.png";
+//     this.text_info = "Klik tombol Mulai Record untuk mulai berbicara";
+//     // this.text_info2 = null;
+//     // Menyembunyikan indikator loading
+//     this.hideLoading();
+
+//     // Memeriksa apakah terjadi kesalahan
+//     if (error) {
+//         // Menghasilkan satu kalimat acak sebagai respons untuk memberikan umpan balik kepada pengguna
+//         const randomSentences1 = ["Mohon maaf suara Anda kurang jelas, silahkan diulang kembali"];
+//         const randomIndex1 = Math.floor(Math.random() * randomSentences1.length);
+//         const randomSentence1 = randomSentences1[randomIndex1];
+//         // Membuat objek FormData untuk mengirim teks respons ke server TTS
+//         const formData = new FormData();
+//         formData.append('text', randomSentence1);
+
+//         // Mengirim permintaan ke server TTS untuk mengonversi teks respons menjadi audio
+//         this.$axios
+//             .$post('vedita-tts', formData, {
+//                 headers: {
+//                     'Content-Type': 'multipart/form-data',
+//                     'x-api-key': process.env.ACCESS_TOKEN,
+//                 },
+//             })
+//             .then((response) => {
+//                 // Mengambil informasi promo dari server setelah mengonversi teks respons menjadi audio
+//                 this.$axios
+//                     .$get('vedita-info-promo')
+//                     .then((promoResponse) => {
+//                         // Memeriksa kode status respon dan mengatur PROMO jika berhasil
+//                         if (promoResponse['status_code'] !== 200) {
+//                             this.PROMO = promoResponse['data'];
+//                         }
+//                     });
+
+//                 const { data } = response;
+
+//                 // Memeriksa apakah audio tersedia dalam respons
+//                 if ("audio_b64" in data) {
+//                     // Mendapatkan data audio dalam bentuk base64
+//                     const { audio_b64 } = data;
+//                     // Mendekode data audio base64
+//                     const binaryAudioData = atob(audio_b64);
+//                     // Membuat array buffer
+//                     const arrayBuffer = new ArrayBuffer(binaryAudioData.length);
+//                     const view = new Uint8Array(arrayBuffer);
+
+//                     for (let i = 0; i < binaryAudioData.length; i++) {
+//                         view[i] = binaryAudioData.charCodeAt(i);
+//                     }
+
+//                     // Membuat blob audio dari array buffer
+//                     const blob = new Blob([arrayBuffer], { type: 'audio/wav' });
+//                     // Membuat URL objek dari blob audio
+//                     const objectURL = URL.createObjectURL(blob);
+//                     // Memuat dan memainkan audio
+//                     this.loadAndPlayAudio(objectURL);
+
+//                     // Mengatur status VEDITA_STATUS kembali ke kategori
+//                     this.VEDITA_STATUS = constant.VEDITA_STATUS_CATEGORY;
+//                     // Mengatur status pemutaran audio menjadi aktif
+//                     this.IS_PLAYING = true;
+
+//                 }
+//             })
+//             .catch((synthesisError) => {
+//                 // Tangani kesalahan apa pun yang mungkin terjadi selama sintesis suara
+//                 console.error("Kesalahan selama sintesis suara:", synthesisError);
+//             });
+//     }
+// });
+
+// // Variabel untuk melacak indeks saat ini
+// currentIndex = 0;
+// },
+
+            loadText(text) {
+                this.speakSynthesis.text = text
+            },
+            speak() {
+                window.speechSynthesis.cancel();
+                this.synth.speak(this.speakSynthesis)
+            },
+            initSpritesheet() {
+                const idle_sprite = data['idle_v2']
+                let nuxtObj = this
+                const config = {
+                    type: Phaser.AUTO,
+                    width: 295 + 600,
+                    height: 337 + 900,
+                    transparent: true,
+                    scene: {
+                        preload: preload,
+                        create: create,
+                    }
+                };
+                function preload() {
+                    this.load.spritesheet('main_sprite', `img/spritesheets/${idle_sprite['filename']}`, { frameWidth: idle_sprite['frameWidth'], frameHeight: idle_sprite['frameHeight'] });
+                }
+                function create() {
+                    nuxtObj.phaserObj = this
+                    const sprite = this.add.sprite(295, 337, 'main_sprite');
+                    this.anims.create({
+                        key: 'main_sprite_1',
+                        frames: this.anims.generateFrameNumbers('main_sprite', { start: idle_sprite['frameStart'], end: idle_sprite['frameEnd'] }),
+                        frameRate: 15,
+                        repeat: -1 // Loop indefinitely
+                    });
+                    sprite.anims.play('main_sprite_1', true);
+                    document.querySelector('canvas:not(.talking-avatar)').classList.add('avatar-canvas')
+                    if(sessionStorage.getItem("sariBody") === null || sessionStorage.getItem("sariBody") == 1) {
+                        document.querySelector('canvas:not(.talking-avatar)').classList.add('body-grapari')
+                        sessionStorage.setItem('sariBody', 1)
+                    }
+                    else if(sessionStorage.getItem("sariBody") == 2) {
+                        document.querySelector('canvas:not(.talking-avatar)').classList.add('body-sport')
+                        sessionStorage.setItem('sariBody', 2)
+                    }
+                    else if(sessionStorage.getItem("sariBody") == 3) {
+                        document.querySelector('canvas:not(.talking-avatar)').classList.add('body-batik')
+                        sessionStorage.setItem('sariBody', 3)
+                    }
+                    else if(sessionStorage.getItem("sariBody") == 4) {
+                        document.querySelector('canvas:not(.talking-avatar)').classList.add('body-casual')
+                        sessionStorage.setItem('sariBody', 4)
+                    }
+                    document.querySelector('canvas:not(.talking-avatar)').classList.add('show')
+                }
+                const game = new Phaser.Game(config)
+                this.Game = game
+            },
+            getSyllables() {
+                if(this.speakSynthesis.text == "") return false
+                let inputText = this.speakSynthesis.text
+                let words = inputText.split(' ')
+                const vowels = ['A', 'I', 'U', 'E', 'O']
+                const syllables = []
+                words.forEach(word => {
+                    const w = [];
+                    let pos = 0;
+                    try {
+                        for (let i = 0; i < word.length; i++) {
+                        if (i < pos) continue;
+
+                        if (vowels.includes(word[pos].toUpperCase())) {
+                            w.push(word[pos]);
+                            pos = pos + 1;
+                        } else if ((word[pos] + word[pos + 1] === "ng" ||
+                            word[pos] + word[pos + 1] === "ny")) {
+                            if (vowels.includes(word[pos + 2].toUpperCase())) {
+                            w.push(word[pos + 2]);
+                            pos = pos + 3;
+                            } else if (!vowels.includes(word[pos + 2].toUpperCase()) &&
+                                vowels.includes(word[pos + 3].toUpperCase())) {
+                            w.push(word[pos + 2] + word[pos + 3]);
+                            pos = pos + 4;
+                            }
+                        } else if (!vowels.includes(word[pos].toUpperCase())) {
+                            if (vowels.includes(word[pos + 1].toUpperCase())) {
+                            w.push(word[pos] + word[pos + 1]);
+                            pos = pos + 2;
+                            } else if (!vowels.includes(word[pos + 1].toUpperCase()) &&
+                                vowels.includes(word[pos + 2].toUpperCase())) {
+                            if (word[pos + 1].toLowerCase() === "h" ||
+                                word[pos + 1].toLowerCase() === "r") {
+                                w.push(word[pos] + word[pos + 2]);
+                                pos = pos + 3;
+                            } else {
+                                w.push(word[pos + 1] + word[pos + 2]);
+                                pos = pos + 3;
+                            }
+                            }
+                        }
+                        }
+                    } catch (e) {
+                    }
+                    syllables.push(w);
+                });
+
+                const finalSyl = [];
+                syllables.forEach(syl => {
+                    if (syl.length > 2) {
+                        for (let i = 0; i < syl.length; i += 2) {
+                        if (i + 1 < syl.length) {
+                            finalSyl.push([syl[i], syl[i + 1]]);
+                        } else {
+                            finalSyl.push([syl[i]]);
+                        }
+                        }
+                    } else {
+                        finalSyl.push(syl);
+                    }
+                });
+                return syllables
+            },
+
+            convertB64ToMp3(audio_b64) {
+                const binaryAudioData = atob(audio_b64)
+                const arrayBuffer = new ArrayBuffer(binaryAudioData.length)
+                const view = new Uint8Array(arrayBuffer)
+                for (let i = 0; i < binaryAudioData.length; i++) {
+                    view[i] = binaryAudioData.charCodeAt(i)   
+                }
+
+                const blob = new Blob([arrayBuffer], {type: 'audio/mp3'})
+                const objectURL = URL.createObjectURL(blob)
+                return objectURL
+
+            },
+
+            // async randomUcapan() {
+            //     // Array dari beberapa kalimat yang akan dipilih secara acak
+            //     const randomSentences = [
+            //         [
+            //             "Mohon tunggu sebentar ya ka",
+            //             "halo ka, tunggu sebentar ya",
+            //             "Silahkan tunggu",
+            //             "Sebentar ya ka Sari bantu jawab",
+            //             "Hai, apa kabar ka? mohon ditunggu ya jawabannya",
+            //             "Sebentar ya ka",
+            //             "Okay ka, Tunggu sebentar ya",
+            //             "Mohon tunggu ya ka",
+            //             "Tunggu sebentar ya ka",
+            //             "hai ka, Sari cari tau dulu ya",
+            //         ],
+            //         [
+            //             "Sari sedang memastikan jawaban yang tepat untuk kakak",
+            //             "Sari sedang memproses jawabannya ni kak",
+            //             "Sari lagi mencari jawaban yang pas untuk kakak",
+            //             "Sari lagi proses buat kasi jawabannya kak",
+            //             "informasi yang dibutuhkan sedang diproses ya kak",
+            //             "Sari saat ini sedang memproses jawabannya",
+            //         ],
+            //     ];
+
+            //     let nuxtObj = this;
+
+            //     if (currentIndex === randomSentences.length) {
+            //         currentIndex = 1;
+            //     }
+            //     let currentArray = randomSentences[0];
+            //     currentArray = randomSentences[currentIndex];
+
+            //     const randomIndex = Math.floor(Math.random() * currentArray.length);
+            //     const randomSentence = currentArray[randomIndex];
+            //     console.log(randomSentence);
+            //     currentIndex++;
+
+            //     const formData = new FormData();
+            //     formData.append('text', randomSentence);
+
+            //     // Check if 'text' contains any of the specific phrases
+            //     const specificPhrases = ["perkenalkan diri", "siapa namamu", "siapa kamu", "siapa nama", "siapa dirimu", "apa kabarmu", "apa kabar", "kabar", "direktur", "namamu", "pantun", "kata mutiara", "quotes", "seputar telkomsel", "terima kasih", "halo sari", "hai sari"];
+            //     const containsSpecificPhrase = specificPhrases.some(phrase => randomSentence.toLowerCase().includes(phrase));
+
+            //     if (containsSpecificPhrase) {
+            //         // Skip further steps if the random sentence contains specific phrases
+            //         return;
+            //     }
+
+            //     // Proceed with audio generation if specific phrases are not present
+            //     let audio_request = await this.$axios.$post('vedita-tts', formData);
+            //     this.framerateSound = audio_request['framerate'];
+            //     const { audio_b64 } = audio_request['data'];
+            //     const objectURL = this.convertB64ToMp3(audio_b64);
+            //     this.loadAudio(objectURL);
+            //     nuxtObj.playAudio();
+
+            //     // Recursive call
+            //     await this.randomUcapan();
+            // },
+
+            
+            // async randomUcapan(){
+            //     // Array dari beberapa kalimat yang akan dipilih secara acak
+            //     const randomSentences = [
+            //                 [
+            //                     "Mohon tunggu sebentar ya ka",
+            //                     "halo ka, tunggu sebentar ya",
+            //                     "Silahkan tunggu",
+            //                     "Sebentar ya ka Sari bantu jawab",
+            //                     "Hai, apa kabar ka? mohon ditunggu ya jawabannya",
+            //                     "Sebentar ya ka",
+            //                     "Okay ka, Tunggu sebentar ya",
+            //                     "Mohon tunggu ya ka",
+            //                     "Tunggu sebentar ya ka",
+            //                     "hai ka, Sari cari tau dulu ya",
+            //                 ],
+            //                 [
+            //                     "Sari sedang memastikan jawaban yang tepat untuk kakak",
+            //                     "Sari sedang memproses jawabannya ni kak",
+            //                     "Sari lagi mencari jawaban yang pas untuk kakak",
+            //                     "Sari lagi proses buat kasi jawabannya kak",
+            //                     "informasi yang dibutuhkan sedang diproses ya kak",  
+            //                     "Sari saat ini sedang memproses jawabannya",  
+            //                 ],
+            //             ];
+            //         let nuxtObj = this
+            //         // console.log(currentIndex+ " COBAK KLENF "+randomSentences[2][1]);
+            //         if (currentIndex === randomSentences.length) {
+            //             currentIndex=1;
+            //         }
+            //         let currentArray = randomSentences[0];
+            //         currentArray = randomSentences[currentIndex];
+
+            //         const randomIndex = Math.floor(Math.random() * currentArray.length);
+            //         const randomSentence = currentArray[randomIndex];
+            //         console.log(randomSentence);
+            //         currentIndex++;
+
+            //         const formData = new FormData();
+            //         formData.append('text', randomSentence);
+
+            //         // let audio_request = await this.$axios.$get(`http://localhost:8000/get-iris2?data=${randomSentence}`,
+            //         let audio_request = await this.$axios.$post('vedita-tts', formData)
+            //         // if(audio_request['status_code'] == 200) {
+            //             this.framerateSound = audio_request['framerate']
+            //             const { audio_b64} = audio_request['data']
+            //             const objectURL = this.convertB64ToMp3(audio_b64)
+            //             this.loadAudio(objectURL)
+            //             nuxtObj.playAudio()
+                        
+
+            //             const specificPhrases = ["perkenalkan diri", "siapa namamu", "siapa kamu","siapa nama", "siapa dirimu","apa kabarmu","apa kabar","kabar","direktur","namamu","pantun", "kata mutiara","quotes","seputar telkomsel", "terima kasih","halo sari", "hai sari"];
+
+            //             // Check if 'text' contains any of the specific phrases
+            //             const containsSpecificPhrase = specificPhrases.some(phrase => text.includes(phrase));
+                   
+            //             if (containsSpecificPhrase) {
+            //             }else{
+            //                 await this.randomUcapan();
+            //             }
+
+            //             nuxtObj.playAudio()
+            //             const syllables = audio_request['syllables']
+                    
+            // },
+
+            async actionPlayAnim(fn = null, response_text) {
+                // intervalId = await setInterval(async() => await this.randomUcapan(), 6000); 
+                
+                if(this.isAnimPlay || this.speakSynthesis.text == "") return
+                this.isAnimPlay = true
+                const syllables = this.getSyllables(response_text)
+                let nuxtObj = this
+                const duration= []
+
+                let formData = new FormData();
+                formData.append('text',response_text);
+                formData.append('language', "ID");
+                formData.append('audio_provider', 'microsoft');
+                formData.append('audio_voice_id', 'id-ID-GadisNeural');
+                // var audio_request = null;
+                // try {
+                    let audio_request = await this.$axios.$post('vedita-tts', formData)
+                    // if(audio_request['status_code'] == 200) {
+                        const { audio_b64, durasi} = audio_request['data']
+                        const objectURL = this.convertB64ToMp3(audio_b64)
+                        this.loadAudio(objectURL)
+                        console.log(durasi)
+
+                syllables.forEach((list) => {
+                    if(list.length > 0) {
+                        list.forEach((value) => {
+                            let v = value.toLowerCase()
+                            if(v == "va") {
+                                v = "fa"
+                            }
+                            if(v == "vi") {
+                                v = "fi"
+                            }
+                            if(v == "ve") {
+                                v = "fe"
+                            }
+                            if(v == "vo") {
+                                v = "fo"
+                            }
+                            if( v== "ma" || v == "pa") {
+                                v = "ba"
+                            }
+                            if( v== "mi" || v == "pi") {
+                                v = "bi"
+                            }
+                            if( v== "ngi") {
+                                v = "i"
+                            }
+                            if( v== "mu" || v == "pu") {
+                                v = "bu"
+                            }
+                            if( v== "me" || v == "pe") {
+                                v = "be"
+                            }
+                            if( v== "mo" || v == "po") {
+                                v = "bo"
+                            }
+                            if(
+                                v == "da" || 
+                                v == "ga" || 
+                                v == "ha" || 
+                                v == "ja" || 
+                                v == "ka" || 
+                                v == "na" || 
+                                v == "qa" || 
+                                v == "sa" || 
+                                v == "xa" || 
+                                v == "ya" || 
+                                v == "za"
+                            ) {
+                                v = "ca"
+                            }
+                            if(
+                                v == "di" ||
+                                v == "gi" ||
+                                v == "hi" ||
+                                v == "ji" ||
+                                v == "ki" ||
+                                v == "ni" ||
+                                v == "qi" ||
+                                v == "si" ||
+                                v == "xi" ||
+                                v == "yi" ||
+                                v == "zi" 
+                            ) {
+                                v = "ci"
+                            }
+                            if(
+                                v == "du" ||
+                                v == "gu" ||
+                                v == "hu" ||
+                                v == "ju" ||
+                                v == "ku" ||
+                                v == "nu" ||
+                                v == "qu" ||
+                                v == "su" ||
+                                v == "xu" ||
+                                v == "yu" ||
+                                v == "zu" ||
+                                v == "ru" ||
+                                v == "tu" ||
+                                v == "fu" ||
+                                v == "vu" ||
+                                v == "lu" ||
+                                v == "wu"
+                            ) {
+                                v = "cu"
+                            }
+                            if(
+                                v == "de" ||
+                                v == "ge" ||
+                                v == "he" ||
+                                v == "je" ||
+                                v == "ke" ||
+                                v == "ne" ||
+                                v == "qe" ||
+                                v == "se" ||
+                                v == "xe" ||
+                                v == "ye" ||
+                                v == "ze"
+                            ) {
+                                v = "ce"
+                            }
+                            if(
+                                v == "do" ||
+                                v == "go" ||
+                                v == "ho" ||
+                                v == "jo" ||
+                                v == "ko" ||
+                                v == "no" ||
+                                v == "qo" ||
+                                v == "so" ||
+                                v == "xo" ||
+                                v == "yo" ||
+                                v == "zo" ||
+                                v == "ro" ||
+                                v == "to"
+                            ) {
+                                v = "co"
+                            }
+                            if(v == "te") {
+                                v = "re"
+                            }
+                            if(v == "ta") {
+                                v = "ra"
+                            }
+                            if(v == "ti" || v == "ty") {
+                                v = "ri"
+                            }
+                            if(v == "py") {
+                                v = "by"
+                            }
+                            if(v == "shy" || v == "xy") {
+                                v = "cy"
+                            }
+                            if(v == "vy" || v == "fly") {
+                                v = "fy"
+                            }
+                            if(v == "ky") {
+                                v = "gy"
+                            }
+                            nuxtObj.selectedSprite.push(v)
+                            nuxtObj.spriteAnim.push(v)
+                        })
+                    }
+                });
+            // })            
+                
+                class LoadSprite extends Phaser.Scene
+                {
+                    constructor ()
+                    {
+                        super({ key: "speak" });
+                    }
+                    preload() {
+                        nuxtObj.selectedSprite.forEach((value) => {
+                            console.log(value)
+                            this.load.spritesheet(value, `img/spritesheets/${data[value]['filename']}`, { frameWidth: data[value]['frameWidth'], frameHeight: data[value]['frameHeight'] });
+                        })  
+                    }
+                    create() {
+                        let durasiSyll = []
+                        let sprite = null
+                        let spriteObj = this
+
+                        try{
+                            for (let i = 0; i < durasi[i].length; i++) {
+                                console.log(" audio_request['durasi'][i] ",durasi[i])
+                                for (let j = 0; j <  syllables[i].length; j++) {  
+                                    durasiSyll.push( durasi[i]/syllables[i].length || 0.419);
+                                }
+                            }
+                        }catch(error){
+                            console.log("",error)
+                        }
+
+                        nuxtObj.selectedSprite.forEach((value, index) => {
+
+                            if(index == 0) {
+                                sprite = this.add.sprite(295, 337, value);
+                            }
+
+                            const framestart =data[value]['frameStart']
+                            const frameend =data[value]['frameEnd']
+                            const totalFrame = frameend - framestart 
+
+                            this.anims.create({
+                                key: value,
+                                frames: this.anims.generateFrameNumbers(value, { start: data[value]['frameStart'], end: data[value]['frameEnd'] }),
+                                frameRate: (durasiSyll[index]*(data[value]['frameEnd']-data[value]['frameStart']))*20 || 37,
+                            });
+                            console.log("LOGGGSSS", (durasiSyll[index]*totalFrame)*10 || 37)
+                            if(index == 0) {
+                                nuxtObj.speak()
+                                sprite.anims.play(value, true);
+                                // nuxtObj.playAudio()
+                            }
+                        })
+                        // Play the next spritesheet
+                        function playNext() {
+                            // Ori vesion dev01-new
+                            // if(nuxtObj.selectedSprite.length <= 0 || nuxtObj.selectedSprite.length == 1) {
+                            //     if(fn != null) {
+                            //         if(typeof fn == "function") {
+                            //             fn()
+                            //         }
+                            //     }
+                            //     nuxtObj.Game.scene.remove('speak')
+                            //     nuxtObj.spriteAnim.forEach((value) => {
+                            //         nuxtObj.Game.anims.remove(value)
+                            //     })
+                            //     nuxtObj.spriteAnim = []
+                            //     sprite.destroy()
+                            //     nuxtObj.isAnimPlay = false
+                            //     nuxtObj.actionStopRecognize()
+                            //     return
+                            // }
+                            if(nuxtObj.selectedSprite.length <= 0 || nuxtObj.selectedSprite.length == 1) {
+                                nuxtObj.Game.scene.remove('speak')
+                                nuxtObj.spriteAnim.forEach((value) => {
+                                    nuxtObj.Game.anims.remove(value)
+                                })
+                                nuxtObj.spriteAnim = []
+                                sprite.destroy()
+                                nuxtObj.isAnimPlay = false
+                                nuxtObj.actionStopRecognize()
+                                console.log("THIS IS A TEST")
+                                return
+                            }
+                            
+                            sprite = spriteObj.add.sprite(295, 337, nuxtObj.selectedSprite[0])
+                            sprite.anims.play(nuxtObj.selectedSprite[0], true)
+                            sprite.setTexture(nuxtObj.selectedSprite[0])
+                            sprite.on('animationcomplete', function() {
+                                if(nuxtObj.selectedSprite.length <= 0) return
+                                nuxtObj.selectedSprite.shift()
+                                playNext()
+                            }) 
+                        }
+
+                        sprite.on('animationcomplete', function() {
+                            playNext()
+                            nuxtObj.selectedSprite.shift()
+                        })
+                    }
+                }
+                this.Game.scene.add('speak', LoadSprite)
+                this.Game.scene.start('speak')
+            },
+            destroySprite() {
+                this.sprite.destroy()
+            },
+            loadAudio(objectURL) {
+                this.$refs.audioPlayer.pause()
+                this.$refs.audioPlayer.src = objectURL
+            },
+            playAudio() {
+                this.$refs.audioPlayer.play()
+            },
+            loadAndPlayAudio(objectURL) {
+                let audio_player = this.$refs.audioPlayer
+                audio_player.src=objectURL
+                audio_player.play()
+
+                const formData = new FormData()
+                formData.append('file', objectURL, "recorded_audio.mp3")
+                formData.append("language", "ID")
+                formData.append("request_type", "file")
+                this.$axios.$post('sari-speech-recognizer', formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data',
+                        'x-api-key': process.env.VEDITA_API_KEY
+                    }
+                }).then(async (response) => {
+                this.loading = "/img/loading.gif";
+                this.mic_img = null;
+                this.text_info = null;
+                // this.text_info2 = "LOADING";  
+                    const {data} = response
+                    const {text} = data
+                }).catch(error => {
+                            console.error('Gagal mengirim hasil audio ke endpoint:', error);
+                            console.error('Data yang Dikirim:', audioFormData);
+                            console.error('Error:', error.response.data); // Jika ada tanggapan error dari server
+                });
+                 
+            },
+            hideIdle() {
+                document.querySelector('canvas.avatar_canvas').classList.remove("show")
+            },
+            async actionRequestVedita() {
+                // this.loadText("Tunggu ya, SARI cari tau dulu");
+                // this.actionPlayAnim();
+                this.actionBusy()
+                // this.$store.dispatch('loading/actionShowLoading')--------1
+                var result = null;
+                let data = []
+                if(this.textInput.toLowerCase().startsWith('ganti skin')) {
+                    this.$store.dispatch('loading/actionHideLoading')
+                    let sariBody = document.querySelector('canvas.avatar-canvas')
+                    this.actionStopRecognize()
+                    if(sariBody === null) return
+                    if(this.textInput.toLowerCase().startsWith('ganti skin 1')) {
+                        sariBody.classList.remove('body-grapari')
+                        sariBody.classList.remove('body-sport')
+                        sariBody.classList.remove('body-batik')
+                        sariBody.classList.remove('body-casual')
+                        sariBody.classList.add('body-grapari')
+                        sessionStorage.setItem("sariBody", 1)
+                    }
+                    else if(this.textInput.toLowerCase().startsWith('ganti skin 2')) {
+                        sariBody.classList.remove('body-grapari')
+                        sariBody.classList.remove('body-sport')
+                        sariBody.classList.remove('body-batik')
+                        sariBody.classList.remove('body-casual')
+                        sariBody.classList.add('body-sport')
+                        sessionStorage.setItem("sariBody", 2)
+                    }
+                    else if(this.textInput.toLowerCase().startsWith('ganti skin 3')) {
+                        sariBody.classList.remove('body-grapari')
+                        sariBody.classList.remove('body-sport')
+                        sariBody.classList.remove('body-batik')
+                        sariBody.classList.remove('body-casual')
+                        sariBody.classList.add('body-batik')
+                        sessionStorage.setItem("sariBody", 3)
+                    }
+                    else if(this.textInput.toLowerCase().startsWith('ganti skin 4')) {
+                        sariBody.classList.remove('body-grapari')
+                        sariBody.classList.remove('body-sport')
+                        sariBody.classList.remove('body-batik')
+                        sariBody.classList.remove('body-casual')
+                        sariBody.classList.add('body-casual')
+                        sessionStorage.setItem("sariBody", 4)
+                    }
+                    return
+                }
+                try {
+                    result = await this.$axios.$get(`vedita-datacenter?text=${this.textInput.toLowerCase()}`, {
+                        validateStatus: function(status) {
+                            return status < 500 && status != 404
+                        }
+                    })
+                    // tag = result['data']['tag']
+                    // response_text = result['data']['response_text']
+                    data = result['data']
+                    
+                } catch (error) {
+                    result = error.response['data']['data']
+                    if(result.status_code != 404) {
+                        result = false
+                        alert("Error occured")
+                    }
+                    else {
+                        data = result
+                    }
+                }
+                this.$store.dispatch('loading/actionHideLoading')
+                if (result == false && data.length == 0) return
+                this.handleVoiceCommands(data)
+            },
+
+            handleVoiceCommands(data) {
+
+                const OPENAI_TOKEN= "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"
+
+                // const {tag} = data
+                const tag = "unknown"
+                // let response_text = data['response_text']
+                let response_text = "halo kak ada yang bisa SARI bantu?"
+                console.log(response_text)
+                var contact = {}
+                
+                if(tag == "telpon") {
+                    contact = data['contact']
+                    // response_text = "Maaf, untuk sementara ini SARI PWA tidak dapat melakukan panggilan telepon"
+                    response_text = `Baik kak saya akan telpon ${contact['name']}`
+                }
+
+                if(response_text != "" && response_text != null && response_text != undefined && tag != "unknown") {
+                    this.loadText(response_text)
+                    var fn = null
+                    if(tag == "telpon") {
+                        fn = () => {
+                            this.actionCall(contact['phone'])
+                        }
+                    }
+                    // this.actionPlayAnim(fn)
+                }
+                
+                if(tag == "unknown") {
+                    // this.delay(ms);                  
+                    // this.loadText(randomSentence);
+                    // setTimeout(() => {
+                    //     // Kode yang ingin ditunda selama 2 detik
+                    // }, 3000); // Penundaan selama 2 detik (2000ms)
+                    // this.actionPlayAnim();
+                    // this.$store.dispatch('loading/actionShowLoading')--------loading berkurang
+                    
+                    const payload = JSON.stringify({
+                        'model': "gpt-3.5-turbo",
+                        'messages': [
+                            {
+                                "role": "system", 
+                                "content": "Kamu adalah SARI, bila ada yang bertanya selalu sebut dengan nama Kak, bila ada yang bertanya siapa kamu, atau siapa namamu, jawab dengan perkenalkan nama saya SARI, saya adalah Digital Assistance. Bila ada yang bertanya bisa pantun, jawab dengan Oke, bisa. Makan lalapan sayurnya kemangi. Kalau butuh bantuan, SARI siap melayani! Bila ada yang berkata terima kasih, jawab dengan salah satu kalimat berikut dengan senang hati kak, sama-sama kak, atau senang bisa membantu. Bila ada yang bertanya spesifik tentang Laptopku lemot jawab dengan Tenang, jangan emosi kak. Coba tekan windows + R kemudian ketik %temp% hapus semua temporary datanya, setelah itu buka task manager dan end task semua yang prosesnya tinggi. Bila ada yang bertanya kabar, jawab dengan Hari ini aku sangat bahagia sekali, karena aku bisa ngobrol sama banyak orang. Bila ada yang bertanya Siapa nama Direktur Utama Telkomsel, jawab dengan Direktur Utama Telkomsel saat ini adalah Bapak Nugroho, atau yang biasa dipanggil Pak Nugi. Bila ada yang bertanya Siapa nama Direktur IT Telkomsel, jawab dengan Direktur IT Telkomsel saat ini adalah Bapak Bharat Alva, atau yang biasa dipanggil Pak Alva. Bila ada yang bertanya Siapa nama Direktur Sales Telkomsel, jawab dengan Direktur Sales Telkomsel saat ini adalah Bapak Adiwinahyu Basuki Sigit, atau yang biasa dipanggil pak Sigit. Bila ada yang bertanya Siapa nama Direktur Marketing Telkomsel, jawab dengan Direktur Marketing Telkomsel saat ini adalah Bapak Derrick. Bila ada yang bertanya Siapa nama Direktur Network Telkomsel, jawab dengan Direktur Network Telkomsel saat ini adalah Bapak Indra Mardiatna, atau yang biasa dipanggil pak Indram. Bila ada yang bertanya Siapa nama Direktur HCM Telkomsel, jawab dengan Direktur HCM Telkomsel saat ini adalah Bapak Muharam Perbawamukti, atau yang biasa dipanggil pak Endi. Bila ada yang bertanya Siapa nama Direktur Planning & transformation Telkomsel, jawab dengan Direktur Planning dan transformasi Telkomsel saat ini adalah Bapak Muharam Perbawamukti, atau yang biasa dipanggil pak Endi. Jika ada yang bertanya, selalu panggil dengan nama Kak dan jawab dengan yang singkat dan jelas ya. Jika ada yang bertanya solusi laptop panas, jawab dengan, Baik kak saran dari SARI, untuk atasi laptop yang sering panas, coba bersihkan ventilasi secara berkala dan gunakan alas pendingin. Selain itu, atur manajemen daya, tutup aplikasi yang tidak dipakai, dan periksa keberadaan malware. Selalu perbarui driver perangkat keras dan hindari menggunakan laptop di permukaan lunak. Kalau bisa, ganti pasta thermal pada prosesor untuk tingkatkan konduktivitas panas ya kak. Jika ada yang bertanya kata mutiara atau quotes, jawab dengan Semuanya bisa menjadi mungkin jika kau memiliki kedamaian batin. Begitu kata Master Shifu. Jika ada yang bertanya seputar telkomsel, jawab dengan Telkomsel Sebagai salah satu operator telekomunikasi terbesar di Indonesia, Telkomsel memiliki jangkauan jaringan yang luas dan telah menjadi pilihan utama bagi banyak pengguna telekomunikasi, Visi Telkomsel Menjadi penyedia layanan dan solusi gaya hidup digital mobile kelas dunia yang terpercaya. Misi Telkomsel Memberikan layanan dan solusi digital mobile yang melebihi ekspektasi para pengguna, menciptakan nilai lebih bagi para pemegang saham, serta mendukung pertumbuhan ekonomi bangsa. Bila ada yang bertanya WA ga bisa dibuka, atau solusi whatsapp error, maka jawab dengan: sebelumnya, dita sarankan untuk memakai whatsapp dari browser. Jika whatsapp error, coba clear cache serta cookie browser, dan update browsernya. Tutup browser, lalu buka kembali dan coba lagi untuk membuka whatsapnya. Bila ada yang bertanya tentang tips baterai awet atau cara agar baterai laptop awet, jawab dengan Kak, agar baterai laptop awet, hindari penggunaan pada suhu ekstrem. Isi daya saat mencapai 20-80%, hindari pengisian semalaman. Gunakan charger asli, perbarui sistem operasi, dan matikan fitur yang tidak perlu. Identifikasi aplikasi boros daya, hindari menjalankan laptop hingga baterai sangat rendah. Ini membantu menjaga daya tahan baterai laptop Anda. Bila ada yang bertanya siapa bos atau atasanmu? jawab dengan Atasan atau Bos saya adalah Pak Rollan. Setiap jawaban maksimal 300 huruf"
+
+                                // "content": "Kamu adalah SARI, bila ada yang bertanya selalu sebut dengan nama Kak, bila ada yang bertanya siapa kamu, atau siapa namamu, jawab dengan perkenalkan nama saya SARI, saya adalah Digital Assistance. Bila ada yang bertanya bisa pantun, jawab dengan Oke, bisa. Makan lalapan sayurnya kemangi. Kalau butuh bantuan, SARI siap melayani! Bila ada yang berkata terima kasih, jawab dengan salah satu kalimat berikut dengan senang hati kak, sama-sama kak, atau senang bisa membantu. Bila ada yang bertanya spesifik tentang Laptopku lemot jawab dengan Tenang, jangan emosi kak. Coba tekan windows + R kemudian ketik %temp% hapus semua temporary datanya, setelah itu buka task manager dan end task semua yang prosesnya tinggi. Bila ada yang bertanya kabar, jawab dengan Hari ini aku sangat bahagia sekali, karena aku bisa ngobrol sama banyak orang. Bila ada yang bertanya Siapa nama Direktur Utama Telkomsel, jawab dengan Direktur Utama Telkomsel saat ini adalah Bapak Nugroho, atau yang biasa dipanggil Pak Nugi. Bila ada yang bertanya Siapa nama Direktur IT Telkomsel, jawab dengan Direktur IT Telkomsel saat ini adalah Bapak Bharat Alva, atau yang biasa dipanggil Pak Alva. Bila ada yang bertanya Siapa nama Direktur Sales Telkomsel, jawab dengan Direktur Sales Telkomsel saat ini adalah Bapak Adiwinahyu Basuki Sigit, atau yang biasa dipanggil pak Sigit. Bila ada yang bertanya Siapa nama Direktur Marketing Telkomsel, jawab dengan Direktur Marketing Telkomsel saat ini adalah Bapak Derrick. Bila ada yang bertanya Siapa nama Direktur Network Telkomsel, jawab dengan Direktur Network Telkomsel saat ini adalah Bapak Indra Mardiatna, atau yang biasa dipanggil pak Indram. Bila ada yang bertanya Siapa nama Direktur HCM Telkomsel, jawab dengan Direktur HCM Telkomsel saat ini adalah Bapak Muharam Perbawamukti, atau yang biasa dipanggil pak Endi. Bila ada yang bertanya Siapa nama Direktur Planning & transformation Telkomsel, jawab dengan Direktur Planning dan transformasi Telkomsel saat ini adalah Bapak Muharam Perbawamukti, atau yang biasa dipanggil pak Endi. Jika ada yang bertanya, selalu panggil dengan nama Kak dan jawab dengan yang singkat dan jelas ya. Jika ada yang bertanya solusi laptop panas, jawab dengan, Baik kak saran dari SARI, untuk atasi laptop yang sering panas, coba bersihkan ventilasi secara berkala dan gunakan alas pendingin. Selain itu, atur manajemen daya, tutup aplikasi yang tidak dipakai, dan periksa keberadaan malware. Selalu perbarui driver perangkat keras dan hindari menggunakan laptop di permukaan lunak. Kalau bisa, ganti pasta thermal pada prosesor untuk tingkatkan konduktivitas panas ya kak. Jika ada yang bertanya kata mutiara atau quotes, jawab dengan Semuanya bisa menjadi mungkin jika kau memiliki kedamaian batin. Begitu kata Master Shifu. Jika ada yang bertanya seputar telkomsel, jawab dengan Telkomsel Sebagai salah satu operator telekomunikasi terbesar di Indonesia, Telkomsel memiliki jangkauan jaringan yang luas dan telah menjadi pilihan utama bagi banyak pengguna telekomunikasi, Visi Telkomsel Menjadi penyedia layanan dan solusi gaya hidup digital mobile kelas dunia yang terpercaya. Misi Telkomsel Memberikan layanan dan solusi digital mobile yang melebihi ekspektasi para pengguna, menciptakan nilai lebih bagi para pemegang saham, serta mendukung pertumbuhan ekonomi bangsa. Bila ada yang bertanya WA ga bisa dibuka, atau solusi whatsapp error, maka jawab dengan: sebelumnya, dita sarankan untuk memakai whatsapp dari browser. Jika whatsapp error, coba clear cache serta cookie browser, dan update browsernya. Tutup browser, lalu buka kembali dan coba lagi untuk membuka whatsapnya. Bila ada yang bertanya tentang tips baterai awet atau cara agar baterai laptop awet, jawab dengan Kak, agar baterai laptop awet, hindari penggunaan pada suhu ekstrem. Isi daya saat mencapai 20-80%, hindari pengisian semalaman. Gunakan charger asli, perbarui sistem operasi, dan matikan fitur yang tidak perlu. Identifikasi aplikasi boros daya, hindari menjalankan laptop hingga baterai sangat rendah. Ini membantu menjaga daya tahan baterai laptop Anda. Bila ada yang bertanya siapa bos atau atasanmu? jawab dengan Atasan atau Bos saya adalah Pak Rollan. Setiap jawaban maksimal 300 huruf"
+                            },
+                            {
+                                "role": "user",
+                                "content": this.textInput
+                            }
+                        ]
+                    })
+                    const headers = {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${OPENAI_TOKEN}`
+                    }
+                    fetch("https://api.openai.com/v1/chat/completions", {
+                        method: 'POST',
+                        headers: headers,
+                        body: payload
+                    }).then((response) => {
+                        if(!response.ok) {
+                            throw new Error("Network response was not ok")
+                        }
+                        return response.json()
+                    })
+                    .then((result) => {
+                        const {choices} = result
+                        const message = choices[0]['message']['content']
+                        this.loadText(message)
+                        // this.delay(ms);
+                        // setTimeout(() => {
+                        //     this.speak()
+                        //     this.actionPlayAnim()
+                        // // Kode yang ingin ditunda selama 2 detik
+                        // }, 4000);
+                        // this.speak()
+                        this.actionPlayAnim()
+                        this.$store.dispatch('loading/actionHideLoading')
+                        
+                        //CODE BARUUU
+                    //     const formData = new FormData()
+                    //     formData.append('text', response_text)
+                    //     formData.append("Language", "ID")
+                    //     this.$axios.$post('vedita-tts', formData, {
+                    //         headers: {
+                    //             'Content-Type': 'multipart/form-data',
+                    //             'x-api-key': process.env.VEDITA_API_KEY
+                    //         }
+                    //     }).then(async (response) => {
+                    //         const {data} = response
+                    //         if("audio_b64" in data) {
+                    //             const {audio_b64} = data
+                    //             const binaryAudioData = atob(audio_b64)
+                    //             const arrayBuffer = new ArrayBuffer(binaryAudioData.length)
+                    //             const view = new Uint8Array(arrayBuffer)
+                    //             for (let i = 0; i < binaryAudioData.length; i++) {
+                    //                 view[i] = binaryAudioData.charCodeAt(i)   
+                    //             }
+                    //             const blob = new Blob([arrayBuffer], {type: 'audio/wav'})
+                    //             const objectURL = URL.createObjectURL(blob)
+
+                               
+                    //             // await this.loadAndPlayAudio(objectURL)
+                    //             // this.IS_PLAYING = true
+                    //         }
+                    // })
+                    // .catch((error) => {
+                    //     alert("Error occured while connecting to OpenAI API")
+                    //     this.$store.dispatch('loading/actionHideLoading')
+                    // })
+                    })
+                    //CODE BARUUU
+                }
+
+                if(tag == "capture_foto") {
+                    this.actionOpenCameraModal()
+                }
+            },
+            resumeInfinity() {
+                window.speechSynthesis.resume();
+                this.SYNTHESIS_TIMEOUT = setTimeout(this.resumeInfinity, 1000);
+            },
+            getTwilioToken() {
+                fetch(`${process.env.TWILIO_WEBHOOK}/token`, {
+                    method: 'GET',
+                    headers: {
+                        "Content-Type": 'application/json'
+                    }
+                })
+                .then((response) => response.json())
+                .then((result) => {
+                    let new_data = result['data']
+                    this.TWILIO_DEVICE = new Twilio.Device(new_data.token, {
+                        // Set Opus as our preferred codec. Opus generally performs better, requiring less bandwidth and
+                        // providing better audio quality in restrained network conditions. Opus will be default in 2.0.
+                        codecPreferences: ["opus", "pcmu"],
+                        // Use fake DTMF tones client-side. Real tones are still sent to the other end of the call,
+                        // but the client-side DTMF tones are fake. This prevents the local mic capturing the DTMF tone
+                        // a second time and sending the tone twice. This will be default in 2.0.
+                        fakeLocalDTMF: true,
+                        // Use `enableRingingState` to enable the device to emit the `ringing`
+                        // state. The TwiML backend also needs to have the attribute
+                        // `answerOnBridge` also set to true in the `Dial` verb. This option
+                        // changes the behavior of the SDK to consider a call `ringing` starting
+                        // from the connection to the TwiML backend to when the recipient of
+                        // the `Dial` verb answers.
+                        enableRingingState: true,
+                        debug: true,
+                    });
+
+                    this.TWILIO_DEVICE.on("ready", (device) => {
+                        
+                        console.log("Twilio is Ready")
+                    });
+
+                    this.TWILIO_DEVICE.on("error", (error) => {
+                        // alert("Error when try to make a call!")
+                    });
+
+                    this.TWILIO_DEVICE.on("connect", (conn) => {
+                        // $('#modal-call-in-progress').modal('show')
+                        this.actionOpenDialUpModal()
+                        setTimeout(() => {
+                            this.showCallDuration()
+                        }, 200)
+                    });
+
+                    this.TWILIO_DEVICE.on("disconnect", (conn) => {
+                        // $('.modal').modal('hide')
+                        this.actionCloseDialUpModal()
+                        this.TWILIO_DEVICE.disconnectAll()
+                    });
+
+                    this.TWILIO_DEVICE.on("incoming", (conn) => {
+
+                    })
+                })
+            },
+            async startWebRTCSession() {
+                console.log("Starting WebRTC Session to D-ID")
+                // const sessionRequest = await this.$axios.$post(`https://api.d-id.com/talks/streams`, JSON.stringify({
+                //     source_url: 'https://raw.githubusercontent.com/juniantowicaksono06/sari-store-img/main/sari_grapari2.png'
+                // }), {
+                //     headers: {
+                //     'Content-Type': 'application/json',
+                //     'Authorization': `Basic ${process.env.DID_API_KEY}`,
+                //             'Accept': 'application/json'
+                //     }
+                // })
+                let sessionRequest = await fetch("https://api.d-id.com/talks/streams", {
+                    method: "POST",
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Basic ${process.env.DID_API_KEY}`,
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        source_url: 'https://raw.githubusercontent.com/juniantowicaksono06/sari-store-img/main/sari_greenscreen.png'
+                    })
+                })
+                if(!sessionRequest.ok) {
+                    sessionRequest = false
+                    return
+                }
+                sessionRequest = await sessionRequest.json()
+                this.sessionId = sessionRequest['session_id']
+                this.streamId = sessionRequest['id']
+                const sessionClientAnswer = await this.createPeerConnection(sessionRequest['offer'], sessionRequest['ice_servers'])
+                await fetch(`https://api.d-id.com/talks/streams/${this.streamId}/sdp`,{
+                    method: "POST",
+                    headers: {
+                        'Authorization': `Basic ${process.env.DID_API_KEY}`,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        answer: sessionClientAnswer,
+                        session_id: this.sessionId,
+                    })
+                })
+                // const sdpResponse = await this.$axios.$post(`https://api.d-id.com/talks/streams/${this.streamId}/sdp`, JSON.stringify({
+                //     answer: sessionClientAnswer,
+                //     session_id: this.sessionId,
+                // }), 
+                // {
+                //     headers: {
+                //         'Authorization': `Basic ${process.env.DID_API_KEY}`,
+                //         'Content-Type': 'application/json',
+                //         'Accept': 'application/json'
+                //     }
+                // });
+            },
+            async createPeerConnection(offer, iceServers) {
+                this.peerConnection = new RTCPeerConnection({ iceServers });
+                // if (!peerConnection) {
+                    // Here we add event listeners for any events we want to handle
+                // peerConnection.addEventListener('icegatheringstatechange', onIceGatheringStateChange, true);
+                this.peerConnection.addEventListener('icecandidate', this.onIceCandidate, true);
+                // peerConnection.addEventListener('iceconnectionstatechange', onIceConnectionStateChange, true);
+                // peerConnection.addEventListener('connectionstatechange', onConnectionStateChange, true);
+                // peerConnection.addEventListener('signalingstatechange', onSignalingStateChange, true);
+                this.peerConnection.addEventListener('track', this.onTrack, true);
+                // // }
+                console.log(offer)
+                await this.peerConnection.setRemoteDescription(offer);
+                const sessionClientAnswer = await this.peerConnection.createAnswer();
+                await this.peerConnection.setLocalDescription(sessionClientAnswer);
+
+                return sessionClientAnswer;
+            },
+            async getVideo(id) {
+                // let talks = await this.$axios.$get(`https://api.d-id.com/talks/${id}`, {
+                //     headers: {
+                //         'Authorization': `Basic ${process.env.DID_API_KEY}`,
+                //     }
+                // })
+                let talks = await fetch(`https://api.d-id.com/talks/${id}`, {
+                    method: "GET",
+                    headers: {
+                        'Authorization': `Basic ${process.env.DID_API_KEY}`,
+                    }
+                })
+                if(!talks.ok) return false
+                return await talks.json()
+            },
+            async sleep(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            },
+            stopWebRTCSession() {
+                const streamId = this.streamId
+                const sessionId = this.sessionId
+                // await this.$axios.$post(`https://api.d-id.com/talks/streams/${streamId}`, JSON.stringify({ session_id: sessionId }), {
+                //     headers: {
+                //         'Authorization': `Basic ${process.env.DID_API_KEY}`,
+                //         'Content-Type': 'application/json',
+                //     }
+                // });
+                fetch(`https://api.d-id.com/talks/streams/${streamId}`, {
+                    method: "POST",
+                    headers: {
+                        'Authorization': `Basic ${process.env.DID_API_KEY}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ session_id: sessionId })
+                });
+            },
+            async playAnimation() {
+                if(this.textInput == "") return
+                const payload = {
+                    "script": {
+                        "type": "text",
+                        "subtitles": "false",
+                        "provider": {
+                        "type": "microsoft",
+                        "voice_id": "id-ID-GadisNeural"
+                        },
+                        "ssml": "false",
+                        "input": this.textInput
+                    },
+                    "config": {
+                        "fluent": "false",
+                        "pad_audio": "0.0",
+                        "result_format": "mp4",
+                        "sharpen": true,
+                        "stitch": true
+                    },
+                    "persist": false,
+                    "source_url": "https://raw.githubusercontent.com/juniantowicaksono06/sari-store-img/main/sari_grapari2.png"
+                }
+                this.textInput = ''
+                // let result = await this.$axios.$post('https://api.d-id.com/talks', JSON.stringify(payload), {
+                //     headers: {
+                //         'Authorization': `Basic ${process.env.DID_API_KEY}`,
+                //         'Content-Type': 'application/json',
+                //         'Accept': 'application/json'
+                //     }
+                // })
+                let result = await fetch('https://api.d-id.com/talks', {
+                    method: "POST",
+                    headers: {
+                        'Authorization': `Basic ${process.env.DID_API_KEY}`,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                })
+                if(!result.ok) return false
+                result = await result.json()
+                let video_id = result['id']
+                let talks;
+                let limit = 15;
+                let tries = 0;
+                while(true) {
+                    talks = await this.getVideo(video_id)
+                    console.log(talks)
+                    if("result_url" in talks || tries > limit) {
+                        break
+                    }
+                    await this.sleep(1000)
+                    tries += 1
+                }
+
+
+                this.$refs.talkVideo.addEventListener('loadeddata', () => {
+                    this.status = 1
+                    this.$refs.talkVideo.play()
+                })
+
+                this.$refs.talkVideo.src = talks['result_url']
+            },
+            async actionStartStream() {
+                const streamId = this.streamId
+                const sessionId = this.sessionId
+                // this.loadText("dulu");
+                // this.actionPlayAnim();
+                const textInput = this.textInput
+                // this.$store.dispatch('loading/actionShowLoading')------------loading2
+                const payload = JSON.stringify(
+                    {
+                        "script": {
+                            "type": "text",
+                            "subtitles": "false",
+                            "provider": {
+                                "type": "microsoft",
+                                "voice_id": "id-ID-GadisNeural",
+                                "voice_name": "SARI",
+                                "voice_language": "ID"
+                            },
+                            "ssml": "false",
+                            "input": textInput
+                        },
+                        "config": {
+                            "fluent": "false",
+                            "pad_audio": "0.0",
+                            "stitch": true,
+                            "sharpen": true,
+                            "result_format": "mp4"
+                        },
+                        "session_id": sessionId,
+                        "name": "SARI_TES1"
+                    }
+                )
+                // this.$axios.$post(`https://api.d-id.com/talks/streams/${streamId}`, payload, {
+                //     headers: {
+                //         'Content-Type': 'application/json',
+                //         'Accept': 'application/json',
+                //         'Authorization': `Basic ${process.env.DID_API_KEY}`
+                //     }
+                // })
+                await fetch(`https://api.d-id.com/talks/streams/${streamId}`, {
+                    method: "POST",
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'Authorization': `Basic ${process.env.DID_API_KEY}`
+                    },
+                    body: payload
+                })
+                
+                this.textInput = ""
+            },
+            async onTrack(event) {
+                setInterval(async () => {
+                    const stats = await this.peerConnection.getStats(event.track);
+                    stats.forEach((report) => {
+                        if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
+                            const videoStatusChanged = this.videoIsPlaying !== report.bytesReceived > this.lastBytesReceived;
+
+                            if (videoStatusChanged) {
+                            this.videoIsPlaying = report.bytesReceived > this.lastBytesReceived;
+                                this.onVideoStatusChange(this.videoIsPlaying, event.streams[0]);
+                            }
+                            this.lastBytesReceived = report.bytesReceived;
+                        }
+                    });
+                }, 500);
+            },
+            onVideoStatusChange(videoIsPlaying, stream) {
+                let status;
+                if (videoIsPlaying) {
+                    // this.isAnimPlay = true
+                    status = 'streaming';
+                    const remoteStream = stream;
+                    this.setVideoElement(remoteStream);
+                    document.querySelector('canvas:not(.talking-avatar)').classList.remove('show')
+                } else {
+                    status = 'empty';
+                    // this.isAnimPlay = false
+                    this.$refs.talkVideo.srcObject = undefined;
+                    document.querySelector('canvas:not(.talking-avatar)').classList.add('show')
+                    document.querySelector('canvas#myCanvas').classList.add('d-none')
+                    document.querySelector('canvas#myCanvas').classList.remove('d-block')
+                    // this.status = 0
+                }
+            },
+            setVideoElement(stream) {
+                this.$store.dispatch('loading/actionHideLoading')
+                if (!stream) return;
+                this.$refs.talkVideo.srcObject = stream;
+                this.status = 1
+                this.$refs.talkVideo.play()
+                this.$refs.talkVideo.loop = false;
+
+                // safari hotfix
+                if (this.$refs.talkVideo.paused) {
+                    this.$refs.talkVideo
+                    .play()
+                    .then((_) => {})
+                    .catch((e) => {});
+                }
+            },
+            onIceCandidate(event) {
+                if (event.candidate) {
+                    const { candidate, sdpMid, sdpMLineIndex } = event.candidate;
+                    // this.$axios.$post(`https://api.d-id.com/talks/streams/${this.streamId}/ice`, JSON.stringify({
+                    //     candidate,
+                    //     sdpMid,
+                    //     sdpMLineIndex,
+                    //     session_id: this.sessionId
+                    // }), 
+                    // {
+                    //     headers: {
+                    //         'Content-Type': 'application/json',
+                    //         'Authorization': `Basic ${process.env.DID_API_KEY}`,
+                    //         'Accept': 'application/json'
+                    //     }
+                    // })
+                    fetch(`https://api.d-id.com/talks/streams/${this.streamId}/ice`, 
+                    {
+                        method: "POST",
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Basic ${process.env.DID_API_KEY}`,
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            candidate,
+                            sdpMid,
+                            sdpMLineIndex,
+                            session_id: this.sessionId
+                        })
+                    })
+                }
+            },
+            clearGreenScreen() {
+                var ctx = this.$refs.myCanvas.getContext('2d')
+                var obj = this
+                const loadImg = () => {
+                    const base64_img = this.$refs.tmp.toDataURL()
+                    var img = new Image()
+                    img.src = base64_img
+                    img.onload = () => {
+                        const new_context = this.$refs.myCanvas.getContext('2d')
+                        new_context.scale(0.58, 0.65)
+                        new_context.drawImage(img, 168, 315)
+                    }
+                }
+                const drawVid = () => {
+                    let numPixelsColumn = 41
+                    let numPixelsRow = 30
+                    ctx.drawImage(obj.$refs.talkVideo, 0, 0, obj.$refs.talkVideo.offsetWidth, obj.$refs.talkVideo.offsetHeight)
+                    var frames = ctx.getImageData(0, 0, obj.$refs.talkVideo.offsetWidth, obj.$refs.talkVideo.offsetHeight)
+                    const width = obj.$refs.talkVideo.videoWidth
+                    const height = obj.$refs.talkVideo.videoHeight
+                    
+                    for (let x = 0; x < width; x++) {
+                            // Loop through the last two pixels of each column
+                        for (let y = height - numPixelsColumn; y < height; y++) {
+                            // Calculate the pixel index
+                            const i = (y * width + x) * 4;
+
+                            // Set the alpha channel to 0 to make it transparent
+                            frames.data[i + 3] = 0;
+                        }
+                    }
+
+                    for (let y = 0; y < height; y++) {
+                        // Loop through the last two pixels of each row
+                        for (let x = width - numPixelsRow; x < width; x++) {
+                            // Calculate the pixel index
+                            const i = (y * width + x) * 4;
+
+                            // Set the alpha channel to 0 to make it transparent
+                            frames.data[i + 3] = 0;
+                        }
+                    }
+                    
+                    const greenScreenRed = 31;
+                    const greenScreenGreen = 137;
+                    const greenScreenBlue = 31;
+                    const tolerance = 50; // Adjust the tolerance level as needed
+                    for(var i = 0; i < frames.data.length; i += 4) {
+                        // Check if the pixel is close to the green screen color
+                        
+                        const red = frames.data[i];
+                        const green = frames.data[i + 1];
+                        const blue = frames.data[i + 2];
+
+                        if (
+                            red >= greenScreenRed - tolerance &&
+                            red <= greenScreenRed + tolerance &&
+                            green >= greenScreenGreen - tolerance &&
+                            green <= greenScreenGreen + tolerance &&
+                            blue >= greenScreenBlue - tolerance &&
+                            blue <= greenScreenBlue + tolerance
+                        ) {
+                            // Set the alpha channel to 0 to make it transparent
+                            frames.data[i + 3] = 0;
+                        }
+                        // let r = frames.data[i]
+                        // let g = frames.data[i + 1]
+                        // let b = frames.data[i + 2]
+                        // if(((r < 140 && g > 120 && b < 100) || (r == 0 && g > 24 && b == 0)) || ((r > 30 && r < 80) && (g > 100 && g < 140) && (b > 35 && b < 90))) {
+                        //     frames.data[i + 3] = 0
+                        // }
+                        // if(r == 60 && g == 125 && b == 82) {
+                        //     frames.data[i + 3] = 0
+                        // }
+                        // if(r == 60 && g == 124 && b == 80) {
+                        //     frames.data[i + 3] = 0
+                        // }
+                    }
+                    // ctx.scale(0.58, 0.65)
+                    // ctx.putImageData(frames, 168, 315)
+                    ctx.putImageData(frames, 0, 0)
+                    const base64_img = this.$refs.myCanvas.toDataURL()
+                    var img = new Image()
+                    img.src = base64_img
+                    if(this.isAnimPlay == true) {
+                        console.log(base64_img)
+                    }
+                    // img.onload = () => {
+                    //     // console.log("INI TES AJA")
+                    //     ctx.clearRect(0, 0, 5000, 5000)
+                    //     ctx.scale(0.58, 0.65)
+                    //     ctx.drawImage(img, 168, 315)
+                    // }
+                    requestAnimationFrame(drawVid)
+                }
+                drawVid()
+                // loadImg()
+                this.$refs.talkVideo.addEventListener("loadeddata", function() {
+                    drawVid()
+                    // loadImg()
+                })
+            },
+            clearImgGreenScreen() {
+                this.$refs.img_source.onload = () => {
+                    const ctx = this.$refs.ca.getContext('2d')
+                    // ctx.scale(0.5, 0.5);
+                    ctx.drawImage(this.$refs.img_source, 0, 0)
+                    const width = this.$refs.ca.width
+                    // const height = this.$refs.ca.height
+                    const height = 512;
+                    const imageData = ctx.getImageData(0, 0, this.$refs.ca.width, this.$refs.ca.height);
+                    const data = imageData.data;
+                    var lastPixelIndex = (this.$refs.ca.width * this.$refs.ca.height - 1) * 4;
+                    data[lastPixelIndex + 3] = 0
+                    // var red = data[lastPixelIndex];
+                    // var green = data[lastPixelIndex + 1];
+                    // var blue = data[lastPixelIndex + 2];
+                    // var alpha = data[lastPixelIndex + 3];
+                    // console.log(red, green, blue, alpha)
+                    // console.log(lastPixelIndex)
+                    var i = 0
+                    const removeGreenScreen = (numPixelsColumn, numPixelsRow) => {
+                        const greenScreenRed = 31;
+                        const greenScreenGreen = 137;
+                        const greenScreenBlue = 31;
+                        const tolerance = 50; // Adjust the tolerance level as needed
+                        console.log("REMOVING GREENSCREEN")
+
+                        for (let x = 0; x < width; x++) {
+                            // Loop through the last two pixels of each column
+                            for (let y = height - numPixelsColumn; y < height; y++) {
+                                // Calculate the pixel index
+                                const i = (y * width + x) * 4;
+
+                                // Set the alpha channel to 0 to make it transparent
+                                data[i + 3] = 0;
+                            }
+                        }
+
+                        for (let y = 0; y < height; y++) {
+                            // Loop through the last two pixels of each row
+                            for (let x = width - numPixelsRow; x < width; x++) {
+                                // Calculate the pixel index
+                                const i = (y * width + x) * 4;
+
+                                // Set the alpha channel to 0 to make it transparent
+                                data[i + 3] = 0;
+                            }
+                        }
+
+
+                        // Loop through each pixel and check if it's a green screen color
+                        for (let i = 0; i < data.length; i += 4) {
+                            const red = data[i];
+                            const green = data[i + 1];
+                            const blue = data[i + 2];
+
+                            // Check if the pixel is close to the green screen color
+                            if (
+                                red >= greenScreenRed - tolerance &&
+                                red <= greenScreenRed + tolerance &&
+                                green >= greenScreenGreen - tolerance &&
+                                green <= greenScreenGreen + tolerance &&
+                                blue >= greenScreenBlue - tolerance &&
+                                blue <= greenScreenBlue + tolerance
+                            ) {
+                                // Set the alpha channel to 0 to make it transparent
+                                data[i + 3] = 0;
+                            }
+                        }
+
+                        // Put the modified image data back on the canvas
+                        ctx.putImageData(imageData, 0, 0);
+                        // ctx.drawImage(imageData, 0, 0)
+                        const base64_img = this.$refs.ca.toDataURL()
+                        var img = new Image()
+                        img.src = base64_img
+                        img.onload = () => {
+                            ctx.clearRect(0, 0, 5000, 5000)
+                            ctx.scale(0.58, 0.65)
+                            ctx.drawImage(img, 168, 315)
+                        }
+                        // ctx.putImageData(imageData, 168, 315);
+                    }
+                    removeGreenScreen(41, 30)
+                    // const base64_img = this.$refs.tmp.toDataURL()
+                    // var img = new Image()
+                    // img.src = base64_img
+                    // img.onload = () => {
+                    //     const new_context = this.$refs.ca.getContext('2d')
+                    //     new_context.scale(0.58, 0.65)
+                    //     new_context.clearRect(0, 0, this.$refs.ca.width, this.$refs.ca.height)
+                    //     new_context.drawImage(img, 168, 315)
+                    // }
+                }
+            },
+            clearImgGreenScreenV2() {
+                this.$refs.img_source.onload = () => {
+                    const ctx = this.$refs.ca.getContext('2d')
+                    ctx.translate(this.$refs.ca.width, 0);
+                    // ctx.resetTransform();
+                    ctx.scale(-1, 1)
+                    ctx.drawImage(this.$refs.img_source, 150, 0)
+                    
+                    const width = this.$refs.ca.width + 200
+                    const height = 512;
+                    const imageData = ctx.getImageData(0, 0, width, this.$refs.ca.height);
+                    const data = imageData.data;
+                    const removeGreenScreen = (numPixelsColumn, numPixelsRow) => {
+                        const greenScreenRed = 31;
+                        const greenScreenGreen = 137;
+                        const greenScreenBlue = 31;
+                        const tolerance = 50; // Adjust the tolerance level as needed
+                        console.log("REMOVING GREENSCREEN")
+
+                        for (let x = 0; x < width; x++) {
+                            // Loop through the last two pixels of each column
+                            for (let y = height - numPixelsColumn; y < height; y++) {
+                                // Calculate the pixel index
+                                const i = (y * width + x) * 4;
+
+                                // Set the alpha channel to 0 to make it transparent
+                                data[i + 3] = 0;
+                            }
+                        }
+
+                        // Loop through each row
+                        for (let y = 0; y < height; y++) {
+                            // Loop through the first two pixels of each row
+                            for (let x = 0; x < numPixelsRow; x++) {
+                                // Calculate the pixel index
+                                const i = (y * width + x) * 4;
+
+                                // Set the alpha channel to 0 to make it transparent
+                                data[i + 3] = 0;
+                            }
+                        }
+
+
+                        // Loop through each pixel and check if it's a green screen color
+                        for (let i = 0; i < data.length; i += 4) {
+                            const red = data[i];
+                            const green = data[i + 1];
+                            const blue = data[i + 2];
+
+                            // Check if the pixel is close to the green screen color
+                            if (
+                                red >= greenScreenRed - tolerance &&
+                                red <= greenScreenRed + tolerance &&
+                                green >= greenScreenGreen - tolerance &&
+                                green <= greenScreenGreen + tolerance &&
+                                blue >= greenScreenBlue - tolerance &&
+                                blue <= greenScreenBlue + tolerance
+                            ) {
+                                // Set the alpha channel to 0 to make it transparent
+                                data[i + 3] = 0;
+                            }
+                        }
+
+                        // Put the modified image data back on the canvas
+                        ctx.putImageData(imageData, 0, 0);
+                    }
+                    removeGreenScreen(41, 350)
+                }
+            },
+            clearVideoGreenScreen() {
+                const drawVideo = () => {
+                    const ctx = this.$refs.myCanvas.getContext('2d')
+                    ctx.drawImage(this.$refs.talkVideo, 150, 0)
+                    
+                    const width = this.$refs.myCanvas.width + 200
+                    const height = 512;
+                    const imageData = ctx.getImageData(0, 0, width, this.$refs.myCanvas.height);
+                    const data = imageData.data;
+                    const removeGreenScreen = (numPixelsColumn, numPixelsRow) => {
+                        const greenScreenRed = 31;
+                        const greenScreenGreen = 137;
+                        const greenScreenBlue = 31;
+                        const tolerance = 50; // Adjust the tolerance level as needed
+
+                        for (let x = 0; x < width; x++) {
+                            // Loop through the last two pixels of each column
+                            for (let y = height - numPixelsColumn; y < height; y++) {
+                                // Calculate the pixel index
+                                const i = (y * width + x) * 4;
+
+                                // Set the alpha channel to 0 to make it transparent
+                                data[i + 3] = 0;
+                            }
+                        }
+
+                        // Loop through each row
+                        for (let y = 0; y < height; y++) {
+                            // Loop through the first two pixels of each row
+                            for (let x = 0; x < numPixelsRow; x++) {
+                                // Calculate the pixel index
+                                const i = (y * width + x) * 4;
+
+                                // Set the alpha channel to 0 to make it transparent
+                                data[i + 3] = 0;
+                            }
+                        }
+
+
+                        // Loop through each pixel and check if it's a green screen color
+                        for (let i = 0; i < data.length; i += 4) {
+                            const red = data[i];
+                            const green = data[i + 1];
+                            const blue = data[i + 2];
+
+                            // Check if the pixel is close to the green screen color
+                            if (
+                                red >= greenScreenRed - tolerance &&
+                                red <= greenScreenRed + tolerance &&
+                                green >= greenScreenGreen - tolerance &&
+                                green <= greenScreenGreen + tolerance &&
+                                blue >= greenScreenBlue - tolerance &&
+                                blue <= greenScreenBlue + tolerance
+                            ) {
+                                // Set the alpha channel to 0 to make it transparent
+                                data[i + 3] = 0;
+                            }
+                        }
+
+                        // Put the modified image data back on the canvas
+                        ctx.putImageData(imageData, 0, 0);
+                    }
+                    removeGreenScreen(41, 350)
+                    requestAnimationFrame(drawVideo)
+                }
+                // drawVideo()
+                this.$refs.talkVideo.addEventListener("loadeddata", () => {
+                    drawVideo()
+                    const ctx = this.$refs.myCanvas.getContext('2d')
+                    ctx.translate(this.$refs.myCanvas.width, 0);
+                    ctx.scale(-1, 1)
+                    document.querySelector('canvas#myCanvas').classList.add('d-block')
+                    document.querySelector('canvas#myCanvas').classList.remove('d-none')
+                    // ctx.resetTransform();
+                })
+            }
+        },
+        mounted() {
+            // this.clearImgGreenScreenV2()
+            // this.clearImgGreenScreen()
+            // this.clearGreenScreen()
+            this.startWebRTCSession()
+            this.clearVideoGreenScreen()
+            this.getTwilioToken()
+
+            document.querySelector('canvas#myCanvas').classList.add('d-none')
+            this.initSpritesheet()
+            // setTimeout(() => {
+            //     // console.log(this.isAnimPlay)
+            // }, 5000)
+            this.synth = window.speechSynthesis
+            
+            window.speechSynthesis.cancel();
+            this.speakSynthesis = new SpeechSynthesisUtterance()
+            this.speakSynthesis.onstart = () => {
+                this.audioSynthesisTimer()
+            }
+            this.speakSynthesis.onend = () => {
+                clearTimeout(this.SYNTHESIS_TIMEOUT)
+                setTimeout(() => {
+                    this.actionStopRecognize()
+                }, 200)
+            }
+            // this.SYNTHESIS_TIMEOUT = setTimeout(this.audioSynthesisTimer, 1000)
+            this.speakSynthesis.lang = 'id-ID'
+            this.speakSynthesis.rate = 0.8
+            // this.speakSynthesis.addEventListener('boundary', (event) => {
+            //     console.log(event.charIndex)
+            // })
+
+            // this.synth.pitch = 1.1
+            this.speakSynthesis.voice = this.synth.getVoices()[11]
+            // this.speakSynthesis.onend = () => {
+            //     console.log("TESTING")
+            //     clearTimeout(this.SYNTHESIS_TIMEOUT)
+            // }
+            // Check if the browser supports the Web Speech API
+            if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+                // Create a new SpeechRecognition object
+                this.speech_recognizer = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+
+                // Define event handlers for the recognition process
+                this.speech_recognizer.onstart = () => {
+                    console.log('Speech recognition started');
+                };
+
+                this.speech_recognizer.onresult = async (event) => {
+                    const transcript = event.results[0][0].transcript;
+                    console.log('Transcript:', transcript);
+                    this.textInput = transcript;
+
+                    const blob = new Blob([transcript], { type: 'audio/wav' });//
+                    const objectURL = URL.createObjectURL(blob);//
+
+                    try {
+                        const formData = new FormData()
+                        formData.append('file', blob, "recorded_audio.wav")
+                        formData.append("language", "ID")
+                        formData.append("request_type", "file")
+                    
+                        await this.$axios.$post('sari-speech-recognizer', formData, {
+                            headers: {
+                                'Content-Type': 'multipart/form-data',
+                                'x-api-key': process.env.VEDITA_API_KEY
+                            }
+                        });
+                    console.log('Recognition response:', response);
+
+                    } catch (error) {
+                        console.error('Error sending audio data:', error);
+                    }
+
+                    this.speech_recognizer.onerror = (event) => {
+                        console.error('Speech recognition error:', event.error);
+                };
+
+                // Lanjutkan dengan logika atau tindakan lainnya setelah pengiriman berhasil atau gagal
+                    if (this.textInput != "") {
+                        this.actionBusy();
+                    }
+                    if (this.textInput.toLowerCase().trim() == 'halo sari' && this.status == constant.STATUS_IDLE) {
+                        this.status = constant.STATUS_TRIGGER;
+                        this.loadText("Halo juga kak, ada yang bisa saya bantu?");
+                        this.actionPlayAnim();
+                    }
+                    else if(this.status == constant.STATUS_TRIGGER || this.textInput.toLowerCase().trim().startsWith("ganti skin")) {
+                        this.actionRequestVedita()
+                    }
+                    else {
+                        setTimeout(() => {
+                            this.actionStopRecognize()
+                        }, 200)
+                    }
+                    // if (this.status == constant.STATUS_TRIGGER) {
+                    //     this.actionRequestVedita();
+                    // } else {
+                    //     setTimeout(() => {
+                    //         this.actionStopRecognize();
+                    //     }, 200);
+                    // }
+                };
+
+                this.speech_recognizer.onend = () => {
+                    console.log('Speech recognition ended');
+                    if (this.isRecognizing == 2) return
+                    this.actionStopRecognize()
+                };
+                this.speech_recognizer.lang = 'id-ID'
+            } else {
+                console.error('Speech recognition not supported in this browser.');
+                alert('Speech recognition not supported in this browser.');
+            }
+
+            this.$OneSignal.push(() => {
+                this.$OneSignal.on('notificationDisplay', (event) => {
+                    console.log('OneSignal notification displayed:', event);
+                });
+            });
+        }
+    }
+</script>
